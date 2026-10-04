@@ -23,7 +23,13 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+            @if ($changedRowsCount > 0)
+                <a href="{{ route('projects.changes.export', $project) }}" class="btn-secondary" title="Semua baris dari seluruh {{ strtolower($unitLabel) }} yang statusnya diubah oleh laporan JSON">
+                    <x-icon name="download" class="size-4" /> Rekap perubahan JSON
+                    <span class="text-[11px] text-slate-400 tabular-nums">{{ number_format($changedRowsCount, 0, ',', '.') }}</span>
+                </a>
+            @endif
             @if ($totalTarget > 0)
                 <span class="text-sm text-slate-500">Realisasi <span class="font-semibold text-slate-900">{{ number_format($totalRealisasi, 0, ',', '.') }}</span> / {{ number_format($totalTarget, 0, ',', '.') }}</span>
             @endif

@@ -205,6 +205,7 @@ class KecamatanTable extends Component
         return view('livewire.projects.kecamatan-table', [
             'kecamatans' => $kecamatans,
             'statusCounts' => $statusCounts,
+            'changedRowsCount' => TargetRow::where('project_id', $this->project->id)->whereNotNull('status_file_id')->count(),
             'counts' => collect(Kecamatan::STATUSES)->map(fn ($label, $key) => $all->where('status', $key)->count()),
             'totalTarget' => $all->sum('target'),
             'totalRealisasi' => $all->sum('realisasi'),

@@ -302,6 +302,39 @@ class TargetDataTest extends TestCase
         $this->assertSame('dipindah', $rows['BBB-2'][1]);
     }
 
+    public function test_changes_export_lists_only_rows_updated_by_json_reports(): void
+    {
+        $this->upload($this->targetWorkbook());
+
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])->assertDontSee('Rekap perubahan JSON');
+
+        $this->uploadReport($this->jsonReport([
+            ['assignment_id' => 'AAA-1', 'status' => 'linked', 'reason' => 'ditautkan', 'doneAt' => '2026-10-04T08:00:00Z'],
+            ['assignment_id' => 'ccc-3', 'status' => 'red', 'reason' => 'gagal kirim', 'doneAt' => '2026-10-04T08:05:00Z'],
+        ]));
+
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])->assertSee('Rekap perubahan JSON');
+
+        auth()->logout();
+        $response = $this->get(route('projects.changes.export', $this->project()))->assertOk();
+
+        $sheets = collect(app(TargetImporter::class)->readWorkbook($response->getFile()->getPathname()))->keyBy('name');
+        $statuses = $this->project()->config()->statuses();
+
+        $summary = collect($sheets['Ringkasan']['rows']);
+        $this->assertSame(['010', 'HARUYAN', 2], array_slice($summary->first(), 0, 3));
+        $this->assertSame('Total', $summary->last()[1]);
+
+        $changed = $sheets['Baris berubah'];
+        $this->assertSame(['Kode Kecamatan', 'Kecamatan', 'Sheet', 'Baris', ...self::HEADERS, 'Status', 'Keterangan', 'Waktu status', 'File JSON'], $changed['headers']);
+
+        $rows = collect($changed['rows'])->keyBy(fn ($cells) => $cells[6]);
+        $this->assertSame(['AAA-1', 'CCC-3'], $rows->keys()->all());
+        $this->assertSame($statuses->label('linked'), $rows['AAA-1'][11]);
+        $this->assertSame('gagal kirim', $rows['CCC-3'][12]);
+        $this->assertSame('laporan-oss-keluarga.json', $rows['AAA-1'][14]);
+    }
+
     public function test_deploy_endpoint_requires_valid_token(): void
     {
         config(['fasih.deploy_token' => 'rahasia']);
