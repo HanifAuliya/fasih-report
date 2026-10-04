@@ -90,7 +90,7 @@ jobs:
           for name in host user; do
             [ -z "${!name}" ] && { echo "::error::Secret FTP untuk '$name' kosong / belum dibuat"; exit 1; }
           done
-          getent hosts "$host" > /dev/null || { echo "::error::Host FTP tidak bisa ditemukan (panjang ${#host} karakter). Periksa secret FTP_SERVER."; exit 1; }
+          [[ "$host" =~ ^[0-9.]+$ ]] || getent hosts "$host" > /dev/null || { echo "::error::Host FTP tidak bisa ditemukan (panjang ${#host} karakter). Periksa secret FTP_SERVER."; exit 1; }
 
           echo "::add-mask::$host"
           echo "::add-mask::$user"
