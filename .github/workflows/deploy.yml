@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy
+  group: deploy-package
   cancel-in-progress: false
 
 jobs:
@@ -44,8 +44,8 @@ jobs:
         env:
           DB_HOST: 127.0.0.1
 
-  # Hostinger shared hosting (tanpa SSH): build di GitHub, upload via FTP,
-  # lalu panggil /_deploy untuk migrate + refresh cache.
+  # Hostinger shared hosting (tanpa SSH): build di GitHub, kirim satu zip lewat HTTPS ke
+  # /_deploy/package (diekstrak di server), lalu panggil /_deploy untuk migrate + refresh cache.
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -69,53 +69,18 @@ jobs:
           npm ci
           npm run build
 
-      # Rapikan isi secret: buang ftp://, spasi/enter, dan pastikan folder diakhiri "/"
-      - name: Prepare FTP settings
-        id: ftp
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+      - name: Package
         run: |
-          host=$(printf '%s' "$FTP_SERVER" | tr -d '[:space:]')
-          host=${host#*://}
-          host=${host%%/*}
-          host=${host%%:*}
-          user=$(printf '%s' "$FTP_USERNAME" | tr -d '[:space:]')
-          dir=$(printf '%s' "$FTP_SERVER_DIR" | tr -d '[:space:]')
-          dir=${dir#/}
-          [ -n "$dir" ] && [ "${dir%/}" = "$dir" ] && dir="$dir/"
-          [ -z "$dir" ] && dir="./"
+          zip -qr ../package.zip . \
+            -x '.git/*' '.github/*' 'node_modules/*' 'tests/*' '.env' '.env.*' '.claude/*' '.mcp.json'
+          ls -lh ../package.zip
 
-          for name in host user; do
-            [ -z "${!name}" ] && { echo "::error::Secret FTP untuk '$name' kosong / belum dibuat"; exit 1; }
-          done
-          [[ "$host" =~ ^[0-9.]+$ ]] || getent hosts "$host" > /dev/null || { echo "::error::Host FTP tidak bisa ditemukan (panjang ${#host} karakter). Periksa secret FTP_SERVER."; exit 1; }
-
-          echo "::add-mask::$host"
-          echo "::add-mask::$user"
-          echo "host=$host" >> "$GITHUB_OUTPUT"
-          echo "user=$user" >> "$GITHUB_OUTPUT"
-          echo "dir=$dir" >> "$GITHUB_OUTPUT"
-          echo "Folder tujuan: $dir"
-
-      - name: Upload via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ steps.ftp.outputs.host }}
-          username: ${{ steps.ftp.outputs.user }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ steps.ftp.outputs.dir }}
-          # .gitignore di storage/ sengaja ikut diupload supaya folder storage terbentuk di server
-          exclude: |
-            .git/**
-            .github/**
-            node_modules/**
-            tests/**
-            .env
-            .env.*
-            .claude/**
-            .mcp.json
+      - name: Upload package
+        run: |
+          curl --fail-with-body -sS --max-time 900 -X POST \
+            -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
+            -F "package=@../package.zip" \
+            "${{ secrets.APP_URL }}/_deploy/package"
 
       - name: Migrate & refresh cache
         run: |

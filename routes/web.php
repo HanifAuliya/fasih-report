@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DeployController;
+use App\Http\Controllers\DeployPackageController;
 use App\Http\Controllers\GithubWebhookController;
 use App\Http\Controllers\RawScriptController;
 use App\Http\Controllers\ReportFileController;
@@ -20,7 +21,13 @@ Route::get('/raw/{project}/{filename}', RawScriptController::class)
     ->where('filename', '[A-Za-z0-9._-]+')
     ->name('scripts.raw');
 
-// Dipanggil GitHub Actions setelah upload FTP: migrate + refresh cache (butuh header X-Deploy-Token)
+// Dipanggil GitHub Actions: kirim zip hasil build lalu diekstrak ke folder aplikasi (butuh header X-Deploy-Token)
+Route::post('/_deploy/package', DeployPackageController::class)
+    ->middleware('throttle:5,1')
+    ->withoutMiddleware(ValidateCsrfToken::class)
+    ->name('deploy.package');
+
+// Dipanggil GitHub Actions setelah kode diperbarui: migrate + refresh cache (butuh header X-Deploy-Token)
 Route::post('/_deploy', DeployController::class)
     ->middleware('throttle:5,1')
     ->withoutMiddleware(ValidateCsrfToken::class)

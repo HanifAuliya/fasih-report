@@ -32,6 +32,9 @@ return [
     // Kosong = endpoint nonaktif.
     'deploy_token' => env('DEPLOY_TOKEN', ''),
 
+    // Folder tujuan ekstrak zip deploy (kosong = folder aplikasi)
+    'deploy_target' => null,
+
     /*
     | Script dari GitHub. Token dibutuhkan untuk repo privat (fine-grained token, izin Contents: Read).
     | Webhook secret = "Secret" di Settings → Webhooks repo, endpoint POST /webhooks/github.
