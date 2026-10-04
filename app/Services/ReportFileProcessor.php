@@ -1,0 +1,166 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Kecamatan;
+use App\Models\Project;
+use App\Models\ReportFile;
+use App\Support\ProjectSettings;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
+use Throwable;
+
+/**
+ * Simpan file yang diupload, lalu proses otomatis:
+ * Excel target -> isi tabel target kecamatan, laporan JSON/CSV -> update status baris.
+ */
+class ReportFileProcessor
+{
+    public function __construct(
+        private TargetImporter $targetImporter,
+        private UnitReportService $unitReports,
+    ) {}
+
+    /**
+     * @param  string  $category  kategori atau "auto"
+     * @param  string  $kecamatan  id kecamatan, "auto" (tebak dari nama file) atau "" (tanpa)
+     */
+    public function store(Project $project, UploadedFile $upload, string $category, string $kecamatan, ?string $notes, ?int $userId): ReportFile
+    {
+        $original = $upload->getClientOriginalName();
+        $extension = strtolower($upload->getClientOriginalExtension());
+        $stored = Str::random(8).'_'.Str::slug(pathinfo($original, PATHINFO_FILENAME)).'.'.$extension;
+        $kecamatans = $project->kecamatans()->get();
+
+        return $project->files()->create([
+            'kecamatan_id' => match ($kecamatan) {
+                'auto' => $this->guessUnit($project, $original, $extension, $kecamatans)?->id,
+                '' => null,
+                default => $kecamatans->firstWhere('id', (int) $kecamatan)?->id,
+            },
+            'category' => $category === 'auto' ? $this->guessCategory($original, $extension) : $category,
+            'original_name' => $original,
+            'path' => $upload->storeAs("reports/{$project->id}", $stored, 'local'),
+            'extension' => $extension,
+            'size' => $upload->getSize(),
+            'notes' => $notes ?: null,
+            'uploaded_by' => $userId,
+        ]);
+    }
+
+    /**
+     * Proses file sesuai jenisnya. Hasilnya disimpan di kolom summary & dikembalikan.
+     */
+    public function process(ReportFile $file): ?string
+    {
+        try {
+            $summary = match (true) {
+                $this->isTargetWorkbook($file) => $this->importTarget($file),
+                $this->isStatusReport($file) => $this->unitReports->activate($file),
+                default => null,
+            };
+        } catch (Throwable $e) {
+            report($e);
+            $summary = 'Gagal diproses: '.$e->getMessage();
+        }
+
+        if ($summary !== null) {
+            $file->update(['summary' => $summary]);
+        }
+
+        return $summary;
+    }
+
+    public function isTargetWorkbook(ReportFile $file): bool
+    {
+        return in_array($file->category, ['target', 'bagian'], true) && $file->extension === 'xlsx' && $file->kecamatan_id !== null;
+    }
+
+    /**
+     * Laporan hanya diproses jika sudah terhubung ke satu unit (diupload dari halaman unit).
+     */
+    public function isStatusReport(ReportFile $file): bool
+    {
+        return $file->isStatusReport() && $file->kecamatan_id !== null;
+    }
+
+    private function importTarget(ReportFile $file): string
+    {
+        $result = $this->targetImporter->import($file, $file->kecamatan);
+
+        return "{$file->kecamatan->nama}: {$result['sheets']} sheet, {$result['rows']} baris ({$result['tracked']} diproses script)"
+            .($result['kept'] ? ", {$result['kept']} status lama dipertahankan" : '');
+    }
+
+    public function guessCategory(string $filename, string $extension): string
+    {
+        $name = strtolower($filename);
+
+        return match (true) {
+            in_array($extension, ['json', 'csv'], true) => 'report',
+            str_contains($name, 'bagian') => 'bagian',
+            str_contains($name, 'target') || in_array($extension, ['xlsx', 'xls'], true) => 'target',
+            default => 'lainnya',
+        };
+    }
+
+    /**
+     * Tentukan unit dari nama file, sesuai pengaturan data:
+     * - unit kecamatan: cocokkan ke daftar kecamatan ("target_OSS_010_HARUYAN.xlsx");
+     * - setiap file jadi unit: "Bagian 01 (…).xlsx" -> BAGIAN 01, selain itu nama file (mis. "PERUBAHAN 27A").
+     *   Unit baru hanya dibuat dari Excel; laporan JSON/CSV dicocokkan ke unit yang sudah ada.
+     *
+     * @param  Collection<int, Kecamatan>  $kecamatans
+     */
+    public function guessUnit(Project $project, string $filename, string $extension, Collection $kecamatans): ?Kecamatan
+    {
+        if ($project->config()->unitSource() === ProjectSettings::UNIT_KECAMATAN) {
+            return $this->guessKecamatan($filename, $kecamatans);
+        }
+
+        if (preg_match('/bagian\s*0*(\d+)\s*(\(([^)]*)\))?/i', $filename, $match)) {
+            $kode = str_pad($match[1], 2, '0', STR_PAD_LEFT);
+            $attributes = ['nama' => 'BAGIAN '.$kode, 'catatan' => $match[3] ?? null];
+        } elseif ($extension === 'xlsx') {
+            $name = mb_strtoupper(mb_substr(trim(preg_replace('/[\s_]+/', ' ', pathinfo($filename, PATHINFO_FILENAME))), 0, 100));
+
+            if ($unit = $kecamatans->firstWhere('nama', $name)) {
+                return $unit;
+            }
+
+            $kode = str_pad((string) ((int) $kecamatans->max(fn (Kecamatan $unit) => (int) $unit->kode) + 1), 2, '0', STR_PAD_LEFT);
+            $attributes = ['nama' => $name, 'catatan' => null];
+        } else {
+            return null;
+        }
+
+        return $kecamatans->firstWhere('kode', $kode)
+            ?? ($extension === 'xlsx' ? $project->kecamatans()->create(['kode' => $kode, ...$attributes]) : null);
+    }
+
+    /**
+     * Tebak kecamatan dari nama file, cth. "target_OSS_010_HARUYAN.xlsx".
+     *
+     * @param  Collection<int, Kecamatan>  $kecamatans
+     */
+    public function guessKecamatan(string $filename, Collection $kecamatans): ?Kecamatan
+    {
+        $normalized = strtoupper(str_replace(['_', '-', '.'], ' ', $filename));
+
+        // Nama terpanjang dulu supaya "BATANG ALAI SELATAN" tidak tertangkap sebagai "BATANG ALAI"
+        foreach ($kecamatans->sortByDesc(fn (Kecamatan $kecamatan) => strlen($kecamatan->nama)) as $kecamatan) {
+            if (str_contains($normalized, strtoupper($kecamatan->nama))) {
+                return $kecamatan;
+            }
+        }
+
+        foreach ($kecamatans as $kecamatan) {
+            if (preg_match('/(^|\D)'.preg_quote($kecamatan->kode, '/').'(\D|$)/', $normalized)) {
+                return $kecamatan;
+            }
+        }
+
+        return null;
+    }
+}

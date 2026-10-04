@@ -1,0 +1,10 @@
+# Untuk shared hosting (Hostinger) yang document root-nya tidak bisa diarahkan ke /public:
+# semua request diteruskan ke folder public, jadi .env, vendor, storage dll. tidak bisa diakses.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>

@@ -1,0 +1,331 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../../app/**/*.php';
+@source '../../vendor/livewire/livewire/src/Features/SupportPagination/views/*.blade.php';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Berlaku saat sidebar diciutkan (class di <html>), dipakai bersama lg: → lg:sb-collapsed:hidden */
+@custom-variant sb-collapsed (&:where(.sidebar-collapsed *));
+
+@theme {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* Aksen utama: iris #5b5bd6 (brand-600 = tombol utama & penanda aktif) */
+    --color-brand-50: #f5f5ff;
+    --color-brand-100: #ededfe;
+    --color-brand-200: #dcdcfd;
+    --color-brand-300: #c2c1fb;
+    --color-brand-400: #9d9bf5;
+    --color-brand-500: #7b78ec;
+    --color-brand-600: #5b5bd6;
+    --color-brand-700: #4b4ab8;
+    --color-brand-800: #3e3d94;
+    --color-brand-900: #33336f;
+    --color-brand-950: #1f1f44;
+
+    --shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.04);
+    --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.03);
+    --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.08);
+}
+
+:root {
+    --surface: #ffffff;
+    --surface-raised: #f8fafc;
+    --page: #f5f6fa;
+    --sidebar: #ffffff;
+    --sidebar-w: 15rem;
+}
+
+/* Lebar sidebar dipakai bersama oleh sidebar & konten (diatur di <head> dan saat diciutkan) */
+html.sidebar-collapsed {
+    --sidebar-w: 4rem;
+}
+
+/*
+ * Mode gelap ala GitHub: palet slate dipetakan ke abu-abu GitHub (canvas #0d1117, border #30363d)
+ * dan warna status ke warna GitHub, jadi semua komponen otomatis ikut tanpa class dark: satu per satu.
+ */
+.dark {
+    color-scheme: dark;
+    --surface: #151b23;
+    --surface-raised: #212830;
+    --page: #0d1117;
+    --sidebar: #010409;
+
+    --color-slate-50: #0d1117;
+    --color-slate-100: #212830;
+    --color-slate-200: #30363d;
+    --color-slate-300: #3d444d;
+    --color-slate-400: #656c76;
+    --color-slate-500: #8b949e;
+    --color-slate-600: #9198a1;
+    --color-slate-700: #c9d1d9;
+    --color-slate-800: #d1d7e0;
+    --color-slate-900: #e6edf3;
+    --color-slate-950: #f0f6fc;
+
+    --gh-green: #3fb950;
+    --gh-red: #f85149;
+    --gh-yellow: #d29922;
+    --gh-purple: #ab7df8;
+    --gh-blue: #4493f8;
+    --gh-teal: #39c5bb;
+}
+
+.dark {
+    --color-brand-50: color-mix(in oklab, #7b78ec 14%, transparent);
+    --color-brand-100: color-mix(in oklab, #7b78ec 22%, transparent);
+    --color-brand-200: color-mix(in oklab, #7b78ec 35%, transparent);
+    --color-brand-600: #6e6ce0;
+    --color-brand-700: #a5a3f7;
+    --color-brand-800: #c2c1fb;
+
+    --color-emerald-50: color-mix(in oklab, var(--gh-green) 15%, transparent);
+    --color-emerald-100: color-mix(in oklab, var(--gh-green) 24%, transparent);
+    --color-emerald-500: #2ea043;
+    --color-emerald-600: var(--gh-green);
+    --color-emerald-700: var(--gh-green);
+    --color-emerald-800: #56d364;
+
+    --color-amber-50: color-mix(in oklab, var(--gh-yellow) 15%, transparent);
+    --color-amber-100: color-mix(in oklab, var(--gh-yellow) 24%, transparent);
+    --color-amber-600: var(--gh-yellow);
+    --color-amber-700: #e3b341;
+
+    --color-rose-50: color-mix(in oklab, var(--gh-red) 15%, transparent);
+    --color-rose-100: color-mix(in oklab, var(--gh-red) 24%, transparent);
+    --color-rose-600: var(--gh-red);
+    --color-rose-700: #ff7b72;
+
+    --color-violet-50: color-mix(in oklab, var(--gh-purple) 15%, transparent);
+    --color-violet-100: color-mix(in oklab, var(--gh-purple) 24%, transparent);
+    --color-violet-600: var(--gh-purple);
+    --color-violet-700: #bc8cff;
+
+    --color-teal-50: color-mix(in oklab, var(--gh-teal) 15%, transparent);
+    --color-teal-100: color-mix(in oklab, var(--gh-teal) 24%, transparent);
+    --color-teal-700: var(--gh-teal);
+
+    --color-cyan-50: color-mix(in oklab, var(--gh-teal) 15%, transparent);
+    --color-cyan-700: var(--gh-teal);
+
+    --color-blue-50: color-mix(in oklab, var(--gh-blue) 15%, transparent);
+    --color-blue-700: var(--gh-blue);
+
+    --color-sky-100: color-mix(in oklab, var(--gh-blue) 24%, transparent);
+    --color-sky-700: var(--gh-blue);
+
+    --color-yellow-50: color-mix(in oklab, var(--gh-yellow) 15%, transparent);
+    --color-yellow-700: #e3b341;
+}
+
+/* Permukaan putih (kartu, input, tombol sekunder) jadi gelap; teks putih di tombol tetap putih */
+.dark .bg-white,
+.dark .focus\:bg-white:focus {
+    background-color: var(--surface);
+}
+
+.dark .bg-white\/80 {
+    background-color: color-mix(in oklab, var(--surface) 80%, transparent);
+}
+
+.dark .hover\:bg-white\/60:hover,
+.dark .hover\:bg-white\/70:hover {
+    background-color: var(--surface-raised);
+}
+
+.dark .text-brand-600 {
+    color: var(--color-brand-400);
+}
+
+body {
+    font-feature-settings: 'cv11', 'ss01';
+}
+
+/*
+ * Semua yang bisa diklik memakai kursor tangan (Tailwind v4 mengembalikan tombol ke kursor default),
+ * supaya pengguna umum langsung tahu mana yang bisa ditekan.
+ */
+@layer base {
+    button:not(:disabled),
+    [role='button'],
+    [role='radio'],
+    select:not(:disabled),
+    summary,
+    label:has(> input[type='checkbox']),
+    label:has(> input[type='radio']),
+    label:has(> input[type='file']),
+    input[type='checkbox'],
+    input[type='radio'] {
+        cursor: pointer;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-brand-500);
+        outline-offset: 2px;
+    }
+}
+
+[x-cloak] {
+    display: none !important;
+}
+
+@utility card {
+    @apply rounded-xl border border-slate-200 bg-(--surface) shadow-(--shadow-card) dark:shadow-none;
+}
+
+@utility btn {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium whitespace-nowrap transition-[background-color,border-color,color,box-shadow,transform] duration-150 select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-(--page) active:translate-y-px disabled:pointer-events-none disabled:opacity-50;
+}
+
+/*
+ * Tombol utama: hitam pekat dengan sorot halus di tepi atas (putih di mode gelap).
+ * slate-900/50 otomatis terbalik di mode gelap, jadi kontras tetap terjaga.
+ */
+@utility btn-primary {
+    @apply btn bg-slate-900 text-slate-50 hover:bg-slate-800;
+    box-shadow:
+        inset 0 1px 0 0 rgb(255 255 255 / 0.14),
+        0 0 0 1px var(--color-slate-900),
+        0 1px 2px 0 rgb(15 23 42 / 0.24),
+        0 2px 6px -2px rgb(15 23 42 / 0.2);
+}
+
+@utility btn-secondary {
+    @apply btn border border-slate-200 bg-(--surface) text-slate-800 hover:border-slate-300 hover:bg-slate-50;
+    box-shadow:
+        0 1px 2px 0 rgb(16 24 40 / 0.05),
+        inset 0 -1px 0 0 rgb(16 24 40 / 0.03);
+}
+
+@utility btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+}
+
+@utility btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700;
+    box-shadow:
+        inset 0 1px 0 0 rgb(255 255 255 / 0.18),
+        0 0 0 1px var(--color-rose-700),
+        0 1px 2px 0 rgb(190 18 60 / 0.25);
+}
+
+@utility btn-icon {
+    @apply inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900;
+}
+
+@utility input {
+    @apply block h-9 w-full rounded-lg border border-slate-200 bg-(--surface) px-3 text-sm text-slate-900 shadow-(--shadow-xs) transition-colors placeholder:text-slate-400 focus:border-brand-500 focus:ring-3 focus:ring-brand-500/15 focus:outline-none dark:shadow-none;
+}
+
+/* textarea & select multi-baris: tinggi mengikuti isi */
+textarea.input {
+    height: auto;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+
+@utility label {
+    @apply mb-1.5 block text-[13px] font-medium text-slate-700;
+}
+
+@utility badge {
+    @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium;
+}
+
+/* Link teks: berwarna aksen & bergaris bawah saat disorot, jelas bisa diklik */
+@utility link {
+    @apply font-medium text-brand-600 underline-offset-[3px] hover:underline;
+}
+
+/* Tombol kecil untuk aksi di tabel / daftar */
+@utility btn-sm {
+    @apply h-7! gap-1.5! rounded-md! px-2.5! text-xs!;
+}
+
+/* Baris judul tabel: sama di semua tabel */
+@utility table-head {
+    @apply border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase;
+}
+
+/* Header di dalam kartu: judul kiri, aksi kanan */
+@utility card-header {
+    @apply flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5;
+}
+
+/* Judul kecil di atas kelompok konten */
+@utility eyebrow {
+    @apply text-[11px] font-semibold tracking-wider text-slate-400 uppercase;
+}
+
+/* Chip/filter yang sedang dipilih */
+@utility chip-active {
+    @apply bg-slate-900 text-white ring-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:ring-slate-300;
+}
+
+/* Latar blok kode: selalu gelap di kedua mode */
+@utility code-surface {
+    background-color: #0d1117;
+}
+
+/* Tabel hasil preview Excel (SheetJS) */
+.sheet-preview table {
+    @apply w-full border-collapse text-xs;
+}
+
+.sheet-preview td {
+    @apply border border-slate-200 px-2 py-1 whitespace-nowrap text-slate-700;
+}
+
+.sheet-preview tr:first-child td {
+    @apply sticky top-0 bg-slate-100 font-semibold text-slate-900;
+}
+
+.sheet-preview tr:nth-child(even) td {
+    @apply bg-slate-50/60;
+}
+
+.hljs {
+    background: transparent !important;
+}
+
+/* Scrollbar tipis supaya tabel lebar tetap rapi */
+.scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-slate-300) transparent;
+}
+
+/* SweetAlert2 menyesuaikan gaya aplikasi */
+.swal2-popup.swal-app {
+    border-radius: 1rem;
+    font-family: var(--font-sans);
+    padding: 1.5rem 1.5rem 1.25rem;
+}
+
+.swal2-popup.swal-app .swal2-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.swal2-popup.swal-app .swal2-html-container {
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.swal2-popup.swal-app .swal2-actions {
+    gap: 0.5rem;
+}
+
+.swal2-popup.swal-toast-app {
+    border-radius: 0.875rem;
+    font-family: var(--font-sans);
+}
+
+.swal2-popup.swal-toast-app .swal2-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
