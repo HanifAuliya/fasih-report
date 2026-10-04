@@ -69,13 +69,43 @@ jobs:
           npm ci
           npm run build
 
+      # Rapikan isi secret: buang ftp://, spasi/enter, dan pastikan folder diakhiri "/"
+      - name: Prepare FTP settings
+        id: ftp
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+        run: |
+          host=$(printf '%s' "$FTP_SERVER" | tr -d '[:space:]')
+          host=${host#*://}
+          host=${host%%/*}
+          host=${host%%:*}
+          user=$(printf '%s' "$FTP_USERNAME" | tr -d '[:space:]')
+          dir=$(printf '%s' "$FTP_SERVER_DIR" | tr -d '[:space:]')
+          dir=${dir#/}
+          [ -n "$dir" ] && [ "${dir%/}" = "$dir" ] && dir="$dir/"
+          [ -z "$dir" ] && dir="./"
+
+          for name in host user; do
+            [ -z "${!name}" ] && { echo "::error::Secret FTP untuk '$name' kosong / belum dibuat"; exit 1; }
+          done
+          getent hosts "$host" > /dev/null || { echo "::error::Host FTP tidak bisa ditemukan (panjang ${#host} karakter). Periksa secret FTP_SERVER."; exit 1; }
+
+          echo "::add-mask::$host"
+          echo "::add-mask::$user"
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "user=$user" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "Folder tujuan: $dir"
+
       - name: Upload via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
+          server: ${{ steps.ftp.outputs.host }}
+          username: ${{ steps.ftp.outputs.user }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          server-dir: ${{ steps.ftp.outputs.dir }}
           # .gitignore di storage/ sengaja ikut diupload supaya folder storage terbentuk di server
           exclude: |
             .git/**
