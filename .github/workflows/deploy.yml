@@ -75,15 +75,26 @@ jobs:
             -x '.git/*' '.github/*' 'node_modules/*' 'tests/*' '.env' '.env.*' '.claude/*' '.mcp.json'
           ls -lh ../package.zip
 
+      # Kirim ke server; coba ulang bila gagal dan tampilkan kode HTTP-nya di ringkasan Actions
       - name: Upload package
         run: |
-          curl --fail-with-body -sS --max-time 900 -X POST \
-            -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
-            -F "package=@../package.zip" \
-            "${{ secrets.APP_URL }}/_deploy/package"
+          for attempt in 1 2 3; do
+            code=$(curl -sS --max-time 900 -o response.txt -w '%{http_code}' -X POST \
+              -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
+              -F "package=@../package.zip" \
+              "${{ secrets.APP_URL }}/_deploy/package" || echo 000)
+            cat response.txt 2>/dev/null | head -c 500; echo
+            [ "$code" = "200" ] && exit 0
+            echo "::warning::Upload percobaan $attempt gagal (HTTP $code)"
+            sleep 30
+          done
+          echo "::error::Upload paket gagal (HTTP $code): $(head -c 300 response.txt 2>/dev/null | tr '\n' ' ')"
+          exit 1
 
       - name: Migrate & refresh cache
         run: |
-          curl --fail-with-body -sS -X POST \
+          code=$(curl -sS --max-time 300 -o response.txt -w '%{http_code}' -X POST \
             -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
-            "${{ secrets.APP_URL }}/_deploy"
+            "${{ secrets.APP_URL }}/_deploy" || echo 000)
+          cat response.txt
+          [ "$code" = "200" ] || { echo "::error::Migrasi gagal (HTTP $code): $(head -c 300 response.txt | tr '\n' ' ')"; exit 1; }
