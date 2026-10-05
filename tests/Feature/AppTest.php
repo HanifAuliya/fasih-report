@@ -181,6 +181,23 @@ class AppTest extends TestCase
             ->assertSee('console.log(2);', false);
     }
 
+    public function test_long_script_is_shown_partially_but_copied_in_full(): void
+    {
+        $project = $this->project();
+        $code = implode("\n", array_map(fn (int $line) => "console.log('baris {$line}');", range(1, 1000)));
+        $script = $project->scripts()->create(['name' => 'Panjang', 'filename' => 'panjang.user.js', 'language' => 'javascript', 'version' => '1.0.0', 'code' => $code]);
+        $script->versions()->create(['version' => '0.9.0', 'code' => $code, 'notes' => 'lama']);
+
+        Livewire::test(ScriptManager::class, ['project' => $project])
+            ->assertSee('Menampilkan 300 dari 1.000 baris')
+            ->assertSee("console.log('baris 300');")
+            ->assertDontSee("console.log('baris 301');")
+            ->call('fullCode', $script->id)
+            ->assertReturned($code)
+            ->call('fullVersionCode', $script->versions()->first()->id)
+            ->assertReturned($code);
+    }
+
     public function test_upload_guesses_kecamatan_from_filename(): void
     {
         Storage::fake('local');

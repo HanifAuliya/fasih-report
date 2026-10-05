@@ -153,13 +153,48 @@ Alpine.data('copyButton', () => ({
 }));
 
 // Blok kode dengan syntax highlight + tombol copy
-Alpine.data('codeBlock', () => ({
+// Kode panjang hanya ditampilkan sebagian (truncated) dan tidak di-highlight bila besar,
+// karena highlight ribuan baris sekaligus membuat browser berat.
+const HIGHLIGHT_LIMIT = 60_000;
+
+Alpine.data('codeBlock', ({ truncated = false, load = null } = {}) => ({
     copied: false,
+    loading: false,
+    truncated,
+    fullText: null,
     init() {
-        hljs.highlightElement(this.$refs.code);
+        this.highlight();
+    },
+    highlight() {
+        const el = this.$refs.code;
+
+        if (el && el.tagName === 'CODE' && el.textContent.length <= HIGHLIGHT_LIMIT) {
+            delete el.dataset.highlighted;
+            hljs.highlightElement(el);
+        }
+    },
+    async text() {
+        if (!this.truncated || !load) {
+            return this.fullText ?? this.$refs.code.textContent;
+        }
+
+        this.loading = true;
+        try {
+            this.fullText ??= await load();
+        } finally {
+            this.loading = false;
+        }
+
+        return this.fullText;
+    },
+    async showAll() {
+        const text = await this.text();
+        this.$refs.code.textContent = text;
+        this.truncated = false;
+        this.highlight();
     },
     async copy() {
-        await copyText(this.$refs.code.textContent);
+        await copyText(await this.text());
         this.copied = true;
         toast('Kode disalin ke clipboard');
         setTimeout(() => (this.copied = false), 1500);

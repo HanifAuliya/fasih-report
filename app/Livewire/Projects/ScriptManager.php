@@ -210,6 +210,19 @@ class ScriptManager extends Component
         $this->dispatch('project-updated');
     }
 
+    /**
+     * Kode lengkap, diambil browser saat "Tampilkan semua" / "Copy Kode" pada script yang dipotong.
+     */
+    public function fullCode(int $id): string
+    {
+        return (string) $this->project->scripts()->findOrFail($id)->code;
+    }
+
+    public function fullVersionCode(int $id): string
+    {
+        return (string) $this->findVersion($id)->code;
+    }
+
     public function viewVersion(int $id): void
     {
         $this->viewingVersionId = $this->findVersion($id)->id;
@@ -258,7 +271,7 @@ class ScriptManager extends Component
         return view('livewire.projects.script-manager', [
             'scripts' => $scripts,
             'selected' => $selected,
-            'versions' => $selected?->versions()->take(15)->get() ?? collect(),
+            'versions' => $selected?->versions()->take(15)->get(['id', 'script_id', 'version', 'notes', 'created_at']) ?? collect(),
             'viewingVersion' => $this->viewingVersionId ? ScriptVersion::find($this->viewingVersionId) : null,
         ]);
     }

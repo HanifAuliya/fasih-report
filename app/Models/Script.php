@@ -91,4 +91,26 @@ class Script extends Model
     {
         return str_ends_with($this->filename, '.user.js');
     }
+
+    /**
+     * Potongan awal kode untuk ditampilkan; sisanya dimuat di browser hanya bila diminta
+     * (script ribuan baris yang langsung di-highlight membuat halaman berat).
+     *
+     * @return array{text: string, lines: int, truncated: bool}
+     */
+    public static function preview(?string $code, int $maxLines = 300): array
+    {
+        $code = (string) $code;
+        $lines = substr_count($code, "\n") + 1;
+
+        if ($lines <= $maxLines) {
+            return ['text' => $code, 'lines' => $lines, 'truncated' => false];
+        }
+
+        return [
+            'text' => implode("\n", array_slice(explode("\n", $code, $maxLines + 1), 0, $maxLines)),
+            'lines' => $lines,
+            'truncated' => true,
+        ];
+    }
 }

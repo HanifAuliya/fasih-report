@@ -148,7 +148,9 @@
             @endif
 
             {{-- Kode --}}
-            <div class="code-surface overflow-hidden rounded-xl shadow-sm ring-1 ring-slate-200" x-data="codeBlock"
+            @php($preview = \App\Models\Script::preview($selected->code))
+            <div class="code-surface overflow-hidden rounded-xl shadow-sm ring-1 ring-slate-200"
+                x-data="codeBlock({ truncated: @js($preview['truncated']), load: () => $wire.fullCode({{ $selected->id }}) })"
                 wire:key="code-{{ $selected->id }}-{{ $selected->updated_at->timestamp }}">
                 <div class="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
                     <div class="flex min-w-0 items-center gap-2">
@@ -161,8 +163,8 @@
                         @endif
                     </div>
                     <div class="flex shrink-0 items-center gap-3">
-                        <span class="text-[11px] text-white/40">{{ number_format(substr_count($selected->code, "\n") + 1) }} baris</span>
-                        <button type="button" @click="copy()" :class="copied ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/80 hover:bg-white/20'"
+                        <span class="text-[11px] text-white/40">{{ number_format($preview['lines'], 0, ',', '.') }} baris</span>
+                        <button type="button" @click="copy()" :disabled="loading" :class="copied ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/80 hover:bg-white/20'"
                             class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition">
                             <x-icon name="copy" class="size-3.5" />
                             <span x-text="copied ? 'Tersalin!' : 'Copy Kode'"></span>
@@ -170,7 +172,15 @@
                     </div>
                 </div>
                 @if (filled($selected->code))
-                    <pre wire:ignore class="scroll-thin max-h-[calc(100vh-18rem)] min-h-64 overflow-auto p-4 text-[13px] leading-relaxed"><code x-ref="code" class="language-{{ $selected->language }} font-mono">{{ $selected->code }}</code></pre>
+                    <pre wire:ignore class="scroll-thin max-h-[calc(100vh-18rem)] min-h-64 overflow-auto p-4 text-[13px] leading-relaxed"><code x-ref="code" class="language-{{ $selected->language }} font-mono">{{ $preview['text'] }}</code></pre>
+                    @if ($preview['truncated'])
+                        <div x-show="truncated" class="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-4 py-2.5 text-xs text-white/50">
+                            <span>Menampilkan 300 dari {{ number_format($preview['lines'], 0, ',', '.') }} baris supaya halaman tetap ringan. Copy Kode tetap menyalin semuanya.</span>
+                            <button type="button" @click="showAll()" :disabled="loading" class="rounded-lg bg-white/10 px-3 py-1.5 font-medium text-white/80 hover:bg-white/20">
+                                <span x-text="loading ? 'Memuat…' : 'Tampilkan semua'"></span>
+                            </button>
+                        </div>
+                    @endif
                 @else
                     <p class="px-4 py-16 text-center text-sm text-white/50" x-ref="code">Kode belum diambil dari GitHub. Klik “Sinkron sekarang”.</p>
                 @endif
@@ -335,13 +345,22 @@
         @if ($viewingVersion)
             <div class="space-y-3 p-5">
                 <p class="text-sm text-slate-500">{{ $viewingVersion->notes ?: 'Tanpa catatan' }} · {{ $viewingVersion->created_at->translatedFormat('d M Y H:i') }}</p>
-                <div class="code-surface overflow-hidden rounded-xl" x-data="codeBlock" wire:key="ver-code-{{ $viewingVersion->id }}">
+                @php($versionPreview = \App\Models\Script::preview($viewingVersion->code))
+                <div class="code-surface overflow-hidden rounded-xl"
+                    x-data="codeBlock({ truncated: @js($versionPreview['truncated']), load: () => $wire.fullVersionCode({{ $viewingVersion->id }}) })"
+                    wire:key="ver-code-{{ $viewingVersion->id }}">
                     <div class="flex justify-end border-b border-white/10 px-3 py-2">
                         <button type="button" @click="copy()" class="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white/80 hover:bg-white/20">
                             <x-icon name="copy" class="size-3.5" /> <span x-text="copied ? 'Tersalin!' : 'Copy'"></span>
                         </button>
                     </div>
-                    <pre wire:ignore class="scroll-thin max-h-[26rem] overflow-auto p-4 text-xs leading-relaxed"><code x-ref="code" class="language-{{ $viewingVersion->script->language }} font-mono">{{ $viewingVersion->code }}</code></pre>
+                    <pre wire:ignore class="scroll-thin max-h-[26rem] overflow-auto p-4 text-xs leading-relaxed"><code x-ref="code" class="language-{{ $viewingVersion->script->language }} font-mono">{{ $versionPreview['text'] }}</code></pre>
+                    @if ($versionPreview['truncated'])
+                        <p x-show="truncated" class="border-t border-white/10 px-4 py-2 text-xs text-white/50">
+                            300 dari {{ number_format($versionPreview['lines'], 0, ',', '.') }} baris ditampilkan ·
+                            <button type="button" @click="showAll()" class="underline hover:text-white/80" x-text="loading ? 'Memuat…' : 'Tampilkan semua'"></button>
+                        </p>
+                    @endif
                 </div>
                 @if ($viewingVersion->script->isFromGithub())
                     <p class="text-xs text-amber-700">Script ini terhubung ke GitHub: restore akan tertimpa lagi saat sinkron berikutnya. Untuk kembali permanen, revert commit di GitHub.</p>
