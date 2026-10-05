@@ -46,6 +46,69 @@
         </div>
     </div>
 
+    {{-- Ringkasan keseluruhan: semua baris dari semua unit --}}
+    @php
+        $overallTotal = $overallCounts->sum();
+        $overallDone = $overallCounts->filter(fn ($count, $code) => $statuses->isDone($code))->sum();
+        $overallPct = $overallTotal ? (int) floor($overallDone / $overallTotal * 100) : 0;
+        $orderedCounts = $statuses->all()->keys()
+            ->filter(fn ($code) => $overallCounts->get($code))
+            ->mapWithKeys(fn ($code) => [$code => $overallCounts->get($code)])
+            ->union($overallCounts->except($statuses->all()->keys()));
+    @endphp
+    @if ($overallTotal > 0)
+        <div class="card p-5">
+            <div class="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                    <p class="eyebrow">Ringkasan keseluruhan</p>
+                    <p class="mt-1 text-sm text-slate-500">
+                        <b class="font-semibold text-slate-900 tabular-nums">{{ number_format($overallTotal, 0, ',', '.') }}</b> baris dari
+                        {{ $counts->sum() }} {{ strtolower($unitLabel) }}
+                    </p>
+                </div>
+                <div class="flex items-center gap-6 text-right">
+                    <div>
+                        <p class="text-xs text-slate-500">Selesai</p>
+                        <p class="text-xl font-semibold text-emerald-600 tabular-nums">{{ number_format($overallDone, 0, ',', '.') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500">Belum selesai</p>
+                        <p class="text-xl font-semibold text-slate-900 tabular-nums">{{ number_format($overallTotal - $overallDone, 0, ',', '.') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500">Progress</p>
+                        <p class="text-xl font-semibold text-slate-900 tabular-nums">{{ $overallPct }}%</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 flex h-2.5 overflow-hidden rounded-full bg-slate-200/70">
+                @foreach ($orderedCounts as $code => $count)
+                    <span class="{{ $statuses->dotClasses($code) }}" style="width: {{ $count / $overallTotal * 100 }}%"
+                        title="{{ $statuses->label($code) }}: {{ number_format($count, 0, ',', '.') }}"></span>
+                @endforeach
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+                @foreach ($orderedCounts as $code => $count)
+                    <div>
+                        <p class="flex items-center gap-1.5 text-xs text-slate-500">
+                            <span class="size-2 shrink-0 rounded-full {{ $statuses->dotClasses($code) }}"></span>
+                            <span class="truncate">{{ $statuses->label($code) }}</span>
+                            @if ($statuses->isDone($code))
+                                <x-icon name="check" class="size-3 text-emerald-600" />
+                            @endif
+                        </p>
+                        <p class="mt-0.5 text-sm font-semibold text-slate-900 tabular-nums">
+                            {{ number_format($count, 0, ',', '.') }}
+                            <span class="text-xs font-normal text-slate-400">{{ round($count / $overallTotal * 100) }}%</span>
+                        </p>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
     <div class="card overflow-x-auto">
         <table class="w-full text-sm">
             <thead>

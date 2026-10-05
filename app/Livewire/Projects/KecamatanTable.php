@@ -206,6 +206,10 @@ class KecamatanTable extends Component
             'kecamatans' => $kecamatans,
             'statusCounts' => $statusCounts,
             'changedRowsCount' => TargetRow::where('project_id', $this->project->id)->whereNotNull('status_file_id')->count(),
+            'overallCounts' => $statusCounts->reduce(
+                fn ($totals, $counts) => $counts->reduce(fn ($totals, $total, $status) => $totals->put($status, $totals->get($status, 0) + $total), $totals),
+                collect(),
+            ),
             'counts' => collect(Kecamatan::STATUSES)->map(fn ($label, $key) => $all->where('status', $key)->count()),
             'totalTarget' => $all->sum('target'),
             'totalRealisasi' => $all->sum('realisasi'),

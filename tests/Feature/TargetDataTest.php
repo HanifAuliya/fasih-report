@@ -123,6 +123,11 @@ class TargetDataTest extends TestCase
         $kecamatan = $this->haruyan();
         $this->assertSame(1, $kecamatan->realisasi);
         $this->assertSame('proses', $kecamatan->status);
+
+        // 3 baris: 1 ditautkan (selesai), 1 gagal, 1 dipindah
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])
+            ->assertSee('Ringkasan keseluruhan')
+            ->assertSeeInOrder(['Selesai', '1', 'Belum selesai', '2', 'Progress', '33%']);
         $this->assertStringContainsString('1 tidak ditemukan', $this->project()->files()->where('extension', 'json')->first()->summary);
     }
 

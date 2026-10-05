@@ -98,6 +98,11 @@ class StatusSet
         return self::COLORS[$this->statuses[$code]['color'] ?? 'slate']['badge'];
     }
 
+    public function dotClasses(?string $code): string
+    {
+        return self::COLORS[$this->statuses[$code]['color'] ?? 'slate']['dot'];
+    }
+
     public function rowClasses(?string $code): string
     {
         return self::COLORS[$this->statuses[$code]['color'] ?? 'slate']['row'];
