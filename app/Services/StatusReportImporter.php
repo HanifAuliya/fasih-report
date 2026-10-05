@@ -25,7 +25,14 @@ class StatusReportImporter
     private const MAX_RESULT_FIELDS = 40;
 
     /**
-     * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, statuses: array<string, int>, unit: string}
+     * Statistik pembacaan terakhir, untuk menjelaskan kenapa laporan tidak cocok.
+     *
+     * @var array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}
+     */
+    private array $lastParse = ['items' => 0, 'without_key' => 0, 'unknown_statuses' => [], 'sample_keys' => []];
+
+    /**
+     * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}
      */
     public function import(ReportFile $file, Kecamatan $unit): array
     {
@@ -38,7 +45,7 @@ class StatusReportImporter
             ->groupBy('row_key');
 
         $defaultCode = $settings->statuses()->defaultCode();
-        $summary = ['records' => count($records), 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'unmatched' => 0, 'statuses' => [], 'unit' => $unit->nama];
+        $summary = ['records' => count($records), 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'unmatched' => 0, 'statuses' => [], 'unit' => $unit->nama, 'parse' => $this->lastParse];
 
         foreach ($records as $rowKey => $record) {
             if (! $rows->has($rowKey)) {
@@ -102,17 +109,33 @@ class StatusReportImporter
         $statuses = $settings->statuses();
 
         $records = [];
+        $this->lastParse = ['items' => 0, 'without_key' => 0, 'unknown_statuses' => [], 'sample_keys' => []];
 
         foreach ($items as $item) {
             if (! is_array($item)) {
                 continue;
             }
 
+            $this->lastParse['items']++;
             $rowKey = $this->rowKey($item, $settings);
-            $status = $statuses->resolve($this->firstField($item, self::STATUS_FIELDS));
+            $rawStatus = $this->firstField($item, self::STATUS_FIELDS);
+            $status = $statuses->resolve($rawStatus);
 
-            if ($rowKey === null || $status === null) {
+            if ($rowKey === null) {
+                $this->lastParse['without_key']++;
+
                 continue;
+            }
+
+            if ($status === null) {
+                $label = $rawStatus ?? '(kosong)';
+                $this->lastParse['unknown_statuses'][$label] = ($this->lastParse['unknown_statuses'][$label] ?? 0) + 1;
+
+                continue;
+            }
+
+            if (count($this->lastParse['sample_keys']) < 2) {
+                $this->lastParse['sample_keys'][] = $rowKey;
             }
 
             $doneAt = $this->firstField($item, self::TIME_FIELDS);

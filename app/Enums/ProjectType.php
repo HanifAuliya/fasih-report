@@ -96,8 +96,8 @@ enum ProjectType: string
                 'statuses' => [
                     ['code' => 'pending', 'label' => 'Belum', 'color' => 'blue', 'done' => false, 'aliases' => ['belum']],
                     ['code' => 'done', 'label' => 'Selesai', 'color' => 'emerald', 'done' => true, 'aliases' => ['selesai', 'hijau']],
-                    ['code' => 'unchanged', 'label' => 'Sudah sesuai', 'color' => 'teal', 'done' => true, 'aliases' => ['sudah sesuai']],
-                    ['code' => 'yellow', 'label' => 'Perlu cek', 'color' => 'amber', 'done' => false, 'aliases' => ['kuning']],
+                    ['code' => 'unchanged', 'label' => 'Sudah sesuai', 'color' => 'teal', 'done' => true, 'aliases' => ['sudah sesuai', 'already']],
+                    ['code' => 'yellow', 'label' => 'Perlu cek', 'color' => 'amber', 'done' => false, 'aliases' => ['kuning', 'manual']],
                     ['code' => 'red', 'label' => 'Gagal', 'color' => 'rose', 'done' => false, 'aliases' => ['merah']],
                 ],
             ],

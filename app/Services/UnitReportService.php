@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Kecamatan;
 use App\Models\ReportFile;
+use App\Support\ProjectSettings;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -63,7 +64,7 @@ class UnitReportService
 
                 // Laporan unit lain / format salah: batalkan, laporan aktif sebelumnya tetap dipakai
                 if ($result['matched'] === 0) {
-                    throw new RuntimeException("tidak ada baris yang cocok dengan {$unit->nama}. Pastikan laporan ini memang untuk {$unit->nama}.");
+                    throw new RuntimeException($this->noMatchReason($result, $unit));
                 }
 
                 return $this->describe($result, $unit);
@@ -140,6 +141,48 @@ class UnitReportService
         return "{$result['records']} baris, {$result['matched']} cocok, {$result['updated']} diperbarui"
             .($result['skipped'] ? ", {$result['skipped']} dilewati" : '')
             .($result['unmatched'] ? ", {$result['unmatched']} tidak ditemukan di {$unit->nama}" : '')
-            .($statuses ? " · {$statuses}" : '');
+            .($statuses ? " · {$statuses}" : '')
+            .($result['parse']['unknown_statuses'] ? ' · Diabaikan karena status belum dikenal: '.$this->unknownStatuses($result) : '');
+    }
+
+    /**
+     * Penjelasan spesifik kenapa tidak ada satu baris pun yang diterapkan.
+     *
+     * @param  array{records: int, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}  $result
+     */
+    private function noMatchReason(array $result, Kecamatan $unit): string
+    {
+        $parse = $result['parse'];
+        $settings = $unit->project->config();
+
+        if ($parse['items'] === 0) {
+            return 'laporan kosong atau formatnya tidak dikenali (butuh JSON berisi daftar baris, mis. "queue", atau CSV).';
+        }
+
+        if ($result['records'] === 0 && $parse['unknown_statuses'] !== []) {
+            return 'status di laporan belum dikenal: '.$this->unknownStatuses($result)
+                .'. Tambahkan sebagai kode atau alias status di tab Pengaturan, lalu upload ulang.';
+        }
+
+        if ($result['records'] === 0) {
+            $fields = $settings->keyMode() === ProjectSettings::KEY_COLUMN
+                ? implode(', ', $settings->reportKeyFields())
+                : 'row / baris_excel';
+
+            return "kolom kunci ({$fields}) tidak ditemukan di laporan. Sesuaikan \"Kolom kunci di laporan\" di tab Pengaturan.";
+        }
+
+        return "tidak ada baris yang cocok dengan {$unit->nama} ({$result['records']} baris laporan, contoh kunci: "
+            .implode(', ', $parse['sample_keys'])."). Pastikan laporan ini memang untuk {$unit->nama}.";
+    }
+
+    /**
+     * @param  array{parse: array{unknown_statuses: array<string, int>}}  $result
+     */
+    private function unknownStatuses(array $result): string
+    {
+        return collect($result['parse']['unknown_statuses'])
+            ->map(fn (int $count, string $status) => "{$status} ({$count})")
+            ->implode(', ');
     }
 }

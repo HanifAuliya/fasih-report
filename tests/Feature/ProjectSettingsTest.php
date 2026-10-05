@@ -157,6 +157,29 @@ class ProjectSettingsTest extends TestCase
             ->assertSee('https://fasih-sm.bps.go.id/app/assignment/fd68e454-ba45-4b85-8205-f3bf777ded24/'.self::UUID_A, false);
     }
 
+    public function test_gaji_script_report_statuses_and_failure_reasons(): void
+    {
+        $project = $this->createProject();
+        $this->upload($project, $this->workbook());
+        $json = fn (array $queue) => UploadedFile::fake()->createWithContent('antrean-koreksi-gaji.json', json_encode(['v' => 1, 'queue' => $queue]));
+
+        $this->uploadReport($project, $json([['id' => 'tidak-ada', 'status' => 'aneh']]));
+        $this->assertStringContainsString('status di laporan belum dikenal: aneh (1)', $project->files()->latest('id')->first()->summary);
+
+        $this->uploadReport($project, $json([['nama' => 'X', 'status' => 'done']]));
+        $this->assertStringContainsString('kolom kunci (link, assignment_id, id) tidak ditemukan', $project->files()->latest('id')->first()->summary);
+
+        $this->uploadReport($project, $json([
+            ['id' => self::UUID_A, 'status' => 'done'],
+            ['id' => self::UUID_B, 'status' => 'already'],
+            ['id' => self::UUID_C, 'status' => 'manual'],
+        ]));
+
+        $this->assertSame('done', TargetRow::firstWhere('row_key', self::UUID_A)->status);
+        $this->assertSame('unchanged', TargetRow::firstWhere('row_key', self::UUID_B)->status);
+        $this->assertSame('yellow', TargetRow::firstWhere('row_key', self::UUID_C)->status);
+    }
+
     public function test_admin_can_change_statuses_and_reprocess_files(): void
     {
         $project = $this->createProject();
