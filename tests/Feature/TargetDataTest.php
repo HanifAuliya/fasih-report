@@ -204,7 +204,14 @@ class TargetDataTest extends TestCase
             ->assertSee('haruyan.json')
             ->assertSee('Aktif')
             ->assertDontSee('Upload JSON');
-        $this->get(route('files.download', $report))->assertOk();
+        $this->get(route('files.download', $report))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/json')
+            ->assertDownload('haruyan.json');
+        $this->get(route('files.view', $report))->assertOk();
+
+        Storage::disk('local')->delete($report->path);
+        $this->get(route('files.download', $report))->assertNotFound();
 
         Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
             ->call('deleteReport', $report->id)
