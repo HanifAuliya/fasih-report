@@ -19,7 +19,13 @@ class DeployPackageController extends Controller
 
         abort_if($token === '' || ! hash_equals($token, (string) $request->header('X-Deploy-Token')), 404);
 
-        $request->validate(['package' => ['required', 'file']]);
+        $request->validate([
+            'package' => ['required', 'file'],
+            'sha' => ['nullable', 'string', 'regex:/^[0-9a-f]{7,40}$/'],
+        ]);
+
+        // Ekstrak ribuan file bisa melewati batas waktu default hosting
+        @set_time_limit(300);
 
         $zip = new ZipArchive;
 
@@ -45,7 +51,20 @@ class DeployPackageController extends Controller
             opcache_reset();
         }
 
+        // Commit yang terpasang: deploy berikutnya cukup mengirim file yang berubah sejak commit ini
+        if ($request->filled('sha')) {
+            file_put_contents(self::shaPath(), $request->input('sha'));
+        }
+
         return response("{$count} file diperbarui.", 200, ['Content-Type' => 'text/plain; charset=utf-8']);
+    }
+
+    /**
+     * File berisi commit yang terakhir dipasang (dibaca DeployStatusController).
+     */
+    public static function shaPath(): string
+    {
+        return storage_path('app/deployed-sha.txt');
     }
 
     /**

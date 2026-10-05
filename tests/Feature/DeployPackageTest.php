@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\DeployPackageController;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -54,6 +55,21 @@ class DeployPackageTest extends TestCase
 
         $this->assertStringEqualsFile($this->target.'/app/Baru.php', '<?php // baru');
         $this->assertStringEqualsFile($this->target.'/lama.txt', 'baru');
+    }
+
+    public function test_deployed_commit_is_recorded_and_reported(): void
+    {
+        File::delete(DeployPackageController::shaPath());
+
+        $this->post('/_deploy/status')->assertNotFound();
+        $this->post('/_deploy/status', [], ['X-Deploy-Token' => 'rahasia'])->assertOk()->assertContent('');
+
+        $this->post('/_deploy/package', ['package' => $this->makePackage(['app/Baru.php' => '<?php']), 'sha' => 'abc1234def'], ['X-Deploy-Token' => 'rahasia'])
+            ->assertOk();
+
+        $this->post('/_deploy/status', [], ['X-Deploy-Token' => 'rahasia'])->assertOk()->assertContent('abc1234def');
+
+        File::delete(DeployPackageController::shaPath());
     }
 
     public function test_package_with_unsafe_paths_is_rejected(): void

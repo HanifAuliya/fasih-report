@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\DeployController;
 use App\Http\Controllers\DeployPackageController;
+use App\Http\Controllers\DeployStatusController;
 use App\Http\Controllers\GithubWebhookController;
 use App\Http\Controllers\ProjectChangesExportController;
 use App\Http\Controllers\RawScriptController;
@@ -21,6 +22,12 @@ use Illuminate\Support\Facades\Route;
 Route::get('/raw/{project}/{filename}', RawScriptController::class)
     ->where('filename', '[A-Za-z0-9._-]+')
     ->name('scripts.raw');
+
+// Dipanggil GitHub Actions: commit yang terpasang di server (butuh header X-Deploy-Token)
+Route::post('/_deploy/status', DeployStatusController::class)
+    ->middleware('throttle:10,1')
+    ->withoutMiddleware(PreventRequestForgery::class)
+    ->name('deploy.status');
 
 // Dipanggil GitHub Actions: kirim zip hasil build lalu diekstrak ke folder aplikasi (butuh header X-Deploy-Token)
 Route::post('/_deploy/package', DeployPackageController::class)

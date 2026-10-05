@@ -52,6 +52,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -69,11 +71,28 @@ jobs:
           npm ci
           npm run build
 
+      # Hanya file yang berubah sejak commit yang terpasang di server (ekstrak ribuan file
+      # melewati batas waktu hosting). vendor/ ikut hanya bila composer.lock berubah.
       - name: Package
         run: |
-          zip -qr ../package.zip . \
-            -x '.git/*' '.github/*' 'node_modules/*' 'tests/*' '.env' '.env.*' '.claude/*' '.mcp.json'
-          ls -lh ../package.zip
+          base=$(curl -sS --max-time 60 -X POST -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
+            "${{ secrets.APP_URL }}/_deploy/status" || true)
+          base=$(printf '%s' "$base" | tr -d '[:space:]')
+
+          if [[ "$base" =~ ^[0-9a-f]{7,40}$ ]] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "Kirim file yang berubah sejak $base"
+            git diff --name-only --diff-filter=ACMRT "$base" HEAD -- . ':!tests' ':!.github' ':!.claude' > ../files.txt
+            if grep -qx 'composer.lock' ../files.txt; then
+              printf 'vendor\nbootstrap/cache\n' >> ../files.txt
+            fi
+          else
+            echo "::warning::Versi di server tidak diketahui: kirim semua file"
+            ls -A | grep -vxE '\.git|\.github|node_modules|tests|\.claude|\.mcp\.json|\.env.*' > ../files.txt
+          fi
+
+          echo 'public/build' >> ../files.txt
+          zip -qr ../package.zip -@ < ../files.txt
+          echo "$(wc -l < ../files.txt) path, $(unzip -l ../package.zip | tail -1)"
 
       # Kirim ke server; coba ulang bila gagal dan tampilkan kode HTTP-nya di ringkasan Actions
       - name: Upload package
@@ -82,6 +101,7 @@ jobs:
             code=$(curl -sS --max-time 900 -o response.txt -w '%{http_code}' -X POST \
               -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
               -F "package=@../package.zip" \
+              -F "sha=${{ github.sha }}" \
               "${{ secrets.APP_URL }}/_deploy/package" || echo 000)
             cat response.txt 2>/dev/null | head -c 500; echo
             [ "$code" = "200" ] && exit 0
