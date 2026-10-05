@@ -15,6 +15,8 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Color;
+use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Writer\XLSX\Writer;
 use Tests\TestCase;
 
@@ -108,6 +110,28 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame(3, $unit->target);
         $this->assertSame([self::UUID_A, self::UUID_B, self::UUID_C], TargetRow::orderBy('row_number')->pluck('row_key')->all());
         $this->assertSame(['pending'], TargetRow::distinct()->pluck('status')->all());
+    }
+
+    public function test_trailing_empty_formatted_columns_are_ignored(): void
+    {
+        $project = $this->createProject();
+        $link = '<a href="https://fasih-sm.bps.go.id/app/assignment/x/'.self::UUID_A.'">Link</a>';
+        $blank = array_fill(0, 2000, '');
+        $style = (new Style)->withBackgroundColor(Color::YELLOW);
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValuesWithStyle(['kec', 'nama_usaha', 'link', ...$blank], $style));
+        $writer->addRow(Row::fromValuesWithStyle(['HARUYAN', 'SDN 2 PANGGUNG', $link, ...$blank], $style));
+        $writer->close();
+
+        $this->upload($project, UploadedFile::fake()->createWithContent('Upah gaji sekolah_041026.xlsx', file_get_contents($path)));
+
+        $sheet = $project->kecamatans()->sole()->targetSheets()->sole();
+        $this->assertSame(['kec', 'nama_usaha', 'link'], $sheet->headers);
+        $this->assertSame(self::UUID_A, TargetRow::sole()->row_key);
+        $this->assertCount(3, TargetRow::sole()->cells);
     }
 
     public function test_csv_report_with_custom_statuses_updates_progress_and_recap(): void

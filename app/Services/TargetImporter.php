@@ -14,6 +14,7 @@ use InvalidArgumentException;
 use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Reader\XLSX\Reader;
+use ZipArchive;
 
 /**
  * Impor Excel menjadi sheet & baris di database, mengikuti pengaturan data (kolom kunci / nomor baris).
@@ -210,53 +211,131 @@ class TargetImporter
             throw new InvalidArgumentException('Bukan file .xlsx yang valid.');
         }
 
+        $readPath = $this->withoutOversizedDimensions($path);
         $reader = new Reader;
-        $reader->open($path);
+        $reader->open($readPath);
 
         $sheets = [];
 
         try {
             foreach ($reader->getSheetIterator() as $sheet) {
-                $headers = null;
+                $headerValues = null;
                 $rows = [];
                 $rowNumber = 0;
+                $width = 0;
 
                 foreach ($sheet->getRowIterator() as $row) {
                     $rowNumber++;
-                    // Sel rumus (mis. "=P2+Q2") diambil hasil hitungnya, bukan teks rumusnya
-                    $values = array_map(
+                    // Sel rumus (mis. "=P2+Q2") diambil hasil hitungnya, bukan teks rumusnya.
+                    // Sel kosong di ujung kanan dibuang: Excel yang pernah diformat satu baris penuh
+                    // bisa terbaca sampai 16.384 kolom kosong.
+                    $values = $this->trimTrailingEmpty(array_map(
                         fn (Cell $cell) => $this->normalizeCell($cell instanceof FormulaCell ? ($cell->getComputedValue() ?? $cell->getValue()) : $cell->getValue()),
                         $row->cells,
-                    );
+                    ));
 
-                    if ($headers === null) {
-                        if (array_filter($values, fn ($value) => $value !== null && $value !== '') === []) {
-                            continue;
-                        }
+                    if ($values === []) {
+                        continue;
+                    }
 
-                        $headers = $this->normalizeHeaders($values);
+                    $width = max($width, count($values));
+
+                    if ($headerValues === null) {
+                        $headerValues = $values;
 
                         continue;
                     }
 
-                    if (array_filter($values, fn ($value) => $value !== null && $value !== '') === []) {
-                        continue;
-                    }
-
-                    $rows[$rowNumber] = array_slice(array_pad($values, count($headers), null), 0, count($headers));
+                    $rows[$rowNumber] = $values;
                 }
 
                 $sheets[] = [
                     'name' => $sheet->getName(),
-                    'headers' => $headers ?? [],
-                    'rows' => $rows,
+                    'headers' => $headerValues === null ? [] : $this->normalizeHeaders(array_pad($headerValues, $width, null)),
+                    'rows' => array_map(fn (array $values) => array_pad($values, $width, null), $rows),
                 ];
             }
         } finally {
             $reader->close();
+
+            if ($readPath !== $path) {
+                @unlink($readPath);
+            }
         }
 
         return $sheets;
+    }
+
+    /**
+     * Excel yang pernah diformat satu baris penuh mencatat ukuran sheet sampai kolom XFD (16.384 kolom),
+     * dan OpenSpout lalu mengisi setiap baris dengan sel kosong sebanyak itu (sangat lambat).
+     * Bila ada ukuran sheet ≥ 703 kolom (AAA), baca dari salinan tanpa info <dimension>, spans baris,
+     * dan sel kosong berformat.
+     */
+    private function withoutOversizedDimensions(string $path): string
+    {
+        $zip = new ZipArchive;
+
+        if ($zip->open($path, ZipArchive::RDONLY) !== true) {
+            return $path;
+        }
+
+        $oversized = [];
+
+        for ($index = 0; $index < $zip->numFiles; $index++) {
+            $name = (string) $zip->getNameIndex($index);
+            $stream = preg_match('#^xl/worksheets/[^/]+\.xml$#', $name) === 1 ? $zip->getStream($name) : false;
+
+            if ($stream === false) {
+                continue;
+            }
+
+            $head = (string) fread($stream, 8192);
+            fclose($stream);
+
+            if (preg_match('/<dimension ref="[A-Z]+\d+:([A-Z]+)\d+"/', $head, $match) === 1 && strlen($match[1]) >= 3) {
+                $oversized[] = $name;
+            }
+        }
+
+        $zip->close();
+
+        if ($oversized === []) {
+            return $path;
+        }
+
+        $copy = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        copy($path, $copy);
+        $zip->open($copy);
+
+        foreach ($oversized as $name) {
+            $xml = (string) $zip->getFromName($name);
+            $xml = preg_replace('/<dimension [^>]*\/>/', '', $xml, 1);
+            $xml = preg_replace('/(<row [^>]*?) spans="[^"]*"/', '$1', $xml);
+            // Sel kosong yang hanya berformat (<c r="XFC1" s="3"/>) tidak berisi nilai apa pun
+            $xml = preg_replace('/<c [^>]*\/>/', '', $xml);
+            $zip->addFromString($name, $xml);
+        }
+
+        $zip->close();
+
+        return $copy;
+    }
+
+    /**
+     * @param  list<mixed>  $values
+     * @return list<mixed>
+     */
+    private function trimTrailingEmpty(array $values): array
+    {
+        $values = array_values($values);
+        $length = count($values);
+
+        while ($length > 0 && ($values[$length - 1] === null || $values[$length - 1] === '')) {
+            $length--;
+        }
+
+        return array_slice($values, 0, $length);
     }
 
     /**
