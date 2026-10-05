@@ -117,6 +117,7 @@ class TargetDataTest extends TestCase
         $linked = TargetRow::firstWhere('row_key', 'aaa-1');
         $this->assertSame('linked', $linked->status);
         $this->assertSame('-2.5', $linked->result['lat']);
+        $this->assertSame('2026-10-04 16:00', $linked->fresh()->status_at->format('Y-m-d H:i'), 'doneAt UTC disimpan dalam WITA');
         $this->assertSame('red', TargetRow::firstWhere('row_key', 'ccc-3')->status);
 
         $kecamatan = $this->haruyan();

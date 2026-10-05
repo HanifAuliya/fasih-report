@@ -120,7 +120,8 @@ class StatusReportImporter
             $records[$rowKey] = [
                 'status' => $status,
                 'reason' => $this->firstField($item, self::REASON_FIELDS),
-                'done_at' => $doneAt ? rescue(fn () => Carbon::parse($doneAt), null, false) : null,
+                // Waktu dari script biasanya UTC ("…Z"): simpan dalam zona waktu aplikasi (WITA)
+                'done_at' => $doneAt ? rescue(fn () => Carbon::parse($doneAt)->setTimezone(config('app.timezone')), null, false) : null,
                 'result' => $this->result($item),
             ];
         }

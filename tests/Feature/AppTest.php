@@ -40,6 +40,18 @@ class AppTest extends TestCase
         return Project::where('slug', 'fasih-auto-ganti-wilayah-oss')->firstOrFail();
     }
 
+    public function test_existing_utc_timestamps_are_shifted_to_wita(): void
+    {
+        $project = Project::first();
+        $project->forceFill(['created_at' => '2026-10-04 08:00:00'])->saveQuietly();
+
+        $migration = require database_path('migrations/2026_10_05_023213_shift_timestamps_from_utc_to_wita.php');
+        $migration->up();
+
+        $this->assertSame('Asia/Makassar', config('app.timezone'));
+        $this->assertSame('2026-10-04 16:00:00', $project->fresh()->created_at->format('Y-m-d H:i:s'));
+    }
+
     public function test_guest_can_view_pages_without_admin_controls(): void
     {
         $url = '/data/fasih-auto-ganti-wilayah-oss';
