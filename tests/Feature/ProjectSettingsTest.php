@@ -10,6 +10,7 @@ use App\Livewire\Projects\ProjectSettingsForm;
 use App\Models\Project;
 use App\Models\TargetRow;
 use App\Models\User;
+use App\Support\ProjectSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -195,14 +196,34 @@ class ProjectSettingsTest extends TestCase
         $component->set('statuses', $statuses)
             ->set('recapColumn', 'desa')
             ->call('save')
-            ->assertHasNoErrors()
-            ->call('reprocessAll');
+            ->assertHasNoErrors();
 
         $project->refresh();
         $this->assertSame('desa', $project->config()->recapColumn());
         $this->assertTrue($project->config()->statuses()->isDone('yellow'));
         $this->assertSame(3, $project->kecamatans()->sole()->realisasi);
         $this->assertSame('yellow', TargetRow::firstWhere('row_key', self::UUID_C)->status);
+    }
+
+    public function test_switching_key_mode_rekeys_existing_rows_on_save(): void
+    {
+        $project = $this->createProject();
+        $this->upload($project, $this->workbook());
+
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project])
+            ->set('keyMode', ProjectSettings::KEY_ROW)
+            ->call('save')
+            ->assertHasNoErrors();
+        $this->assertSame('sheet1!2', TargetRow::orderBy('row_number')->first()->row_key);
+
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project->refresh()])
+            ->set('keyMode', ProjectSettings::KEY_COLUMN)
+            ->call('save')
+            ->assertHasNoErrors();
+        $this->assertSame(self::UUID_A, TargetRow::orderBy('row_number')->first()->row_key);
+
+        $this->uploadReport($project->refresh(), $this->csvReport());
+        $this->assertSame('done', TargetRow::firstWhere('row_key', self::UUID_A)->status);
     }
 
     public function test_settings_validate_status_codes(): void

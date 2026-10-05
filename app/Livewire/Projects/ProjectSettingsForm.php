@@ -125,6 +125,8 @@ class ProjectSettingsForm extends Component
             'reportKeyFields.required' => 'Isi nama field kunci di laporan.',
         ]);
 
+        $before = $this->matchingSettings($this->project->config());
+
         $this->project->update(['settings' => (new ProjectSettings([
             'unit_label' => $this->unitLabel,
             'unit_source' => $this->unitSource,
@@ -137,8 +139,33 @@ class ProjectSettingsForm extends Component
             'statuses' => $this->statuses,
         ]))->toArray()]);
 
+        // Cara pencocokan / status berubah: data lama langsung disesuaikan, tanpa perlu klik "Proses ulang"
+        if ($before !== $this->matchingSettings($this->project->refresh()->config())) {
+            $this->reprocessAll(app(ReportFileProcessor::class), app(UnitReportService::class));
+            $this->dispatch('toast', message: 'Pengaturan disimpan & data diproses ulang');
+
+            return;
+        }
+
         $this->dispatch('toast', message: 'Pengaturan disimpan');
         $this->dispatch('project-updated');
+    }
+
+    /**
+     * Bagian pengaturan yang memengaruhi kunci baris dan status: bila berubah, Excel & laporan perlu diproses ulang.
+     *
+     * @return array<string, mixed>
+     */
+    private function matchingSettings(ProjectSettings $config): array
+    {
+        return [
+            'unit_source' => $config->unitSource(),
+            'key_mode' => $config->keyMode(),
+            'key_column' => $config->keyColumn(),
+            'report_key_fields' => $config->reportKeyFields(),
+            'initial_status_column' => $config->initialStatusColumn(),
+            'statuses' => $config->statuses()->toArray(),
+        ];
     }
 
     /**
