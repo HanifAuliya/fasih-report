@@ -281,6 +281,32 @@ class TargetDataTest extends TestCase
         $this->assertSame(1, $this->haruyan()->realisasi);
     }
 
+    public function test_admin_can_change_status_of_selected_rows_at_once(): void
+    {
+        $this->upload($this->targetWorkbook());
+        $this->upload($this->targetWorkbook('target_OSS_020_BATU_BENAWA.xlsx'));
+
+        $haruyanRows = $this->haruyan()->targetRows()->tracked()->pluck('id');
+        $otherUnitRow = TargetRow::tracked()->whereNotIn('id', $haruyanRows)->first();
+
+        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
+            ->assertSee('Pilih semua baris di halaman ini')
+            ->set('selected', [...$haruyanRows->map(fn ($id) => (string) $id), (string) $otherUnitRow->id])
+            ->call('setStatusForSelected', 'linked')
+            ->assertSet('selected', []);
+
+        $this->assertSame(['linked'], $this->haruyan()->targetRows()->tracked()->distinct()->pluck('status')->all());
+        $this->assertNotSame('linked', $otherUnitRow->refresh()->status, 'baris unit lain tidak ikut berubah');
+        $this->assertSame(3, $this->haruyan()->realisasi);
+
+        auth()->logout();
+        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
+            ->assertDontSee('Pilih semua baris di halaman ini')
+            ->set('selected', $haruyanRows->map(fn ($id) => (string) $id)->all())
+            ->call('setStatusForSelected', 'pending')
+            ->assertForbidden();
+    }
+
     public function test_rows_per_page_only_accepts_listed_sizes(): void
     {
         $this->upload($this->targetWorkbook());

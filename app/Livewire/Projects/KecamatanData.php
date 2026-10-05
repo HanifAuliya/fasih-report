@@ -47,6 +47,9 @@ class KecamatanData extends Component
 
     public ?int $detailId = null;
 
+    /** @var list<int|string> id baris yang dicentang untuk ubah status sekaligus */
+    public array $selected = [];
+
     public function mount(Project $project, string $kode): void
     {
         $this->kecamatan = $project->kecamatans()->where('kode', $kode)->firstOrFail();
@@ -54,13 +57,19 @@ class KecamatanData extends Component
 
     public function updatedSheetId(): void
     {
-        $this->reset('statusFilter');
+        $this->reset('statusFilter', 'selected');
         $this->resetPage();
     }
 
     public function updatedStatusFilter(): void
     {
+        $this->reset('selected');
         $this->resetPage();
+    }
+
+    public function updatedPaginators(): void
+    {
+        $this->reset('selected');
     }
 
     public function updatedPerPage(): void
@@ -71,6 +80,7 @@ class KecamatanData extends Component
 
     public function updatedSearch(): void
     {
+        $this->reset('selected');
         $this->resetPage();
     }
 
@@ -78,20 +88,47 @@ class KecamatanData extends Component
     {
         $this->authorize('manage');
 
+        $this->kecamatan->targetRows()->tracked()->findOrFail($rowId);
+        $this->applyStatus([$rowId], $status);
+    }
+
+    /**
+     * Ubah status semua baris yang dicentang sekaligus.
+     */
+    public function setStatusForSelected(string $status): void
+    {
+        $this->authorize('manage');
+
+        $count = $this->applyStatus(array_map('intval', $this->selected), $status);
+        $this->reset('selected');
+
+        if ($count === 0) {
+            $this->dispatch('toast', message: 'Tidak ada baris yang dipilih', type: 'error');
+        }
+    }
+
+    /**
+     * @param  list<int>  $rowIds
+     */
+    private function applyStatus(array $rowIds, string $status): int
+    {
         $statuses = $this->project->config()->statuses();
         abort_unless($statuses->has($status), 422);
 
-        $row = $this->kecamatan->targetRows()->tracked()->findOrFail($rowId);
-        $row->update([
+        $count = $this->kecamatan->targetRows()->tracked()->whereIn('id', $rowIds)->update([
             'status' => $status,
             'reason' => 'diubah manual di web',
             'status_at' => now(),
             'status_file_id' => null,
         ]);
 
-        $this->kecamatan->syncProgressFromTargets();
-        $this->dispatch('toast', message: 'Status diubah: '.$statuses->label($status));
-        $this->dispatch('project-updated');
+        if ($count > 0) {
+            $this->kecamatan->syncProgressFromTargets();
+            $this->dispatch('toast', message: ($count > 1 ? "{$count} baris → " : 'Status diubah: ').$statuses->label($status));
+            $this->dispatch('project-updated');
+        }
+
+        return $count;
     }
 
     public function openReportUpload(): void

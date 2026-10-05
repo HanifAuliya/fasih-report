@@ -118,6 +118,26 @@
                 <span x-show="full" x-cloak class="ml-auto truncate px-3 pb-2 text-xs font-medium text-slate-500">{{ $project->name }} · {{ $kecamatan->nama }}</span>
             </div>
 
+            {{-- Bar ubah status sekaligus: muncul saat ada baris yang dicentang --}}
+            @can('manage')
+                @if ($tracked)
+                    <div x-data="{ bulkStatus: @js($statuses->defaultCode()) }" x-show="$wire.selected.length" x-cloak x-transition.opacity
+                        class="flex flex-wrap items-center gap-2 border-b border-brand-200 bg-brand-50 px-3 py-2.5 text-sm">
+                        <span class="font-semibold text-brand-700"><span x-text="$wire.selected.length"></span> baris dipilih</span>
+                        <span class="text-slate-500">· Ubah status ke</span>
+                        <select x-model="bulkStatus" class="input w-auto py-1.5 text-xs">
+                            @foreach ($statuses->all() as $code => $status)
+                                <option value="{{ $code }}">{{ $status['label'] }}</option>
+                            @endforeach
+                        </select>
+                        <button type="button" x-on:click="$wire.setStatusForSelected(bulkStatus)" class="btn-primary btn-sm" wire:loading.attr="disabled" wire:target="setStatusForSelected">
+                            <x-icon name="check" class="size-3.5" /> Terapkan
+                        </button>
+                        <button type="button" x-on:click="$wire.selected = []" class="btn-ghost btn-sm">Batal</button>
+                    </div>
+                @endif
+            @endcan
+
             {{-- Toolbar --}}
             <div class="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3">
                 <div class="relative min-w-0 flex-1 sm:max-w-sm">
@@ -154,7 +174,20 @@
                 <table class="data-grid w-full border-separate border-spacing-0 text-xs">
                     <thead class="sticky top-0 z-10">
                         <tr class="text-left text-[11px] font-semibold text-slate-600">
-                            <th class="sticky left-0 z-10 bg-slate-100 px-2 py-2.5 text-left text-slate-500">Baris</th>
+                            <th class="sticky left-0 z-10 bg-slate-100 px-2 py-2.5 text-left text-slate-500">
+                                <span class="flex items-center gap-2">
+                                    @can('manage')
+                                        @if ($tracked && $rows->isNotEmpty())
+                                            <input type="checkbox" title="Pilih semua baris di halaman ini"
+                                                x-data="{ ids: @js($rows->pluck('id')->map(fn ($id) => (string) $id)->values()) }"
+                                                :checked="ids.length && ids.every(id => $wire.selected.includes(id))"
+                                                x-on:change="$wire.selected = $event.target.checked ? [...ids] : []"
+                                                class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                                        @endif
+                                    @endcan
+                                    Baris
+                                </span>
+                            </th>
                             @if ($tracked)
                                 <th class="bg-slate-100 px-3 py-2.5 whitespace-nowrap">Status</th>
                                 <th class="bg-slate-100 px-3 py-2.5 whitespace-nowrap">Keterangan</th>
@@ -167,7 +200,13 @@
                     <tbody>
                         @forelse ($rows as $row)
                             <tr wire:key="row-{{ $row->id }}" class="group {{ $statuses->rowClasses($row->status) }} hover:bg-brand-50/60">
-                                <td class="sticky left-0 bg-slate-50 px-2 py-1 group-hover:bg-brand-50">
+                                <td class="sticky left-0 bg-slate-50 px-2 py-1 whitespace-nowrap group-hover:bg-brand-50">
+                                    @can('manage')
+                                        @if ($tracked)
+                                            <input type="checkbox" wire:model="selected" value="{{ $row->id }}" title="Pilih baris ini"
+                                                class="mr-1.5 rounded border-slate-300 align-middle text-brand-600 focus:ring-brand-500">
+                                        @endif
+                                    @endcan
                                     <button type="button" wire:click="openDetail({{ $row->id }})" title="Lihat semua isi baris ini"
                                         class="inline-flex h-6 items-center gap-1.5 rounded-md border border-slate-200 bg-(--surface) px-1.5 text-[11px] font-medium text-slate-600 tabular-nums transition hover:border-brand-500 hover:text-brand-700">
                                         <x-icon name="eye" class="size-3.5" /> {{ $row->row_number }}
