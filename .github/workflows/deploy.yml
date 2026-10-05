@@ -71,13 +71,37 @@ jobs:
           npm ci
           npm run build
 
+      # CDN Hostinger (proteksi bot) kadang memblokir server GitHub dengan 403. Semua request deploy
+      # dikirim langsung ke server asal (IP yang sama dengan FTP_SERVER) lewat --resolve.
+      - name: Route to origin server
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          ORIGIN_IP: ${{ secrets.FTP_SERVER }}
+        run: |
+          host=$(printf '%s' "$APP_URL" | sed -E 's#^https?://([^/:]+).*#\1#')
+          ip=$(printf '%s' "$ORIGIN_IP" | tr -d '[:space:]'); ip=${ip#*://}; ip=${ip%%/*}; ip=${ip%%:*}
+          if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ORIGIN=--resolve $host:443:$ip" >> "$GITHUB_ENV"
+            echo "Deploy langsung ke server asal (tanpa CDN)"
+          else
+            echo "ORIGIN=--globoff" >> "$GITHUB_ENV"
+            echo "::warning::FTP_SERVER bukan IP: deploy lewat CDN"
+          fi
+
       # Hanya file yang berubah sejak commit yang terpasang di server (ekstrak ribuan file
       # melewati batas waktu hosting). vendor/ ikut hanya bila composer.lock berubah.
       - name: Package
         run: |
-          base=$(curl -sS --max-time 60 -X POST -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
-            "${{ secrets.APP_URL }}/_deploy/status" || true)
-          base=$(printf '%s' "$base" | tr -d '[:space:]')
+          code=$(curl -sS $ORIGIN --max-time 60 -o base.txt -w '%{http_code}' -X POST \
+            -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
+            "${{ secrets.APP_URL }}/_deploy/status" || echo 000)
+          base=$(tr -d '[:space:]' < base.txt 2>/dev/null)
+
+          # Server tidak menjawab dengan benar: jangan kirim semua file (pasti kena batas waktu)
+          if [ "$code" != "200" ]; then
+            echo "::error::Tidak bisa membaca versi di server (HTTP $code). Coba jalankan ulang deploy beberapa menit lagi."
+            exit 1
+          fi
 
           if [[ "$base" =~ ^[0-9a-f]{7,40}$ ]] && git cat-file -e "$base^{commit}" 2>/dev/null; then
             echo "Kirim file yang berubah sejak $base"
@@ -86,7 +110,7 @@ jobs:
               printf 'vendor\nbootstrap/cache\n' >> ../files.txt
             fi
           else
-            echo "::warning::Versi di server tidak diketahui: kirim semua file"
+            echo "::warning::Versi di server belum tercatat: kirim semua file"
             ls -A | grep -vxE '\.git|\.github|node_modules|tests|\.claude|\.mcp\.json|\.env.*' > ../files.txt
           fi
 
@@ -98,7 +122,7 @@ jobs:
       - name: Upload package
         run: |
           for attempt in 1 2 3; do
-            code=$(curl -sS --max-time 900 -o response.txt -w '%{http_code}' -X POST \
+            code=$(curl -sS $ORIGIN --max-time 900 -o response.txt -w '%{http_code}' -X POST \
               -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
               -F "package=@../package.zip" \
               -F "sha=${{ github.sha }}" \
@@ -113,7 +137,7 @@ jobs:
 
       - name: Migrate & refresh cache
         run: |
-          code=$(curl -sS --max-time 300 -o response.txt -w '%{http_code}' -X POST \
+          code=$(curl -sS $ORIGIN --max-time 300 -o response.txt -w '%{http_code}' -X POST \
             -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
             "${{ secrets.APP_URL }}/_deploy" || echo 000)
           cat response.txt
