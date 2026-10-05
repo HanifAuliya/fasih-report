@@ -62,6 +62,12 @@ class UnitReportService
                 $this->targetImporter->resetStatuses($unit);
                 $result = $this->statusImporter->import($file, $unit);
 
+                // Kunci baris mungkin masih dari pengaturan lama: hitung ulang lalu coba sekali lagi
+                if ($result['matched'] === 0 && $result['records'] > 0 && $this->targetImporter->rekey($unit) > 0) {
+                    $this->targetImporter->resetStatuses($unit);
+                    $result = $this->statusImporter->import($file, $unit);
+                }
+
                 // Laporan unit lain / format salah: batalkan, laporan aktif sebelumnya tetap dipakai
                 if ($result['matched'] === 0) {
                     throw new RuntimeException($this->noMatchReason($result, $unit));

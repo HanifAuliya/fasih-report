@@ -226,6 +226,21 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame('done', TargetRow::firstWhere('row_key', self::UUID_A)->status);
     }
 
+    public function test_report_upload_rekeys_rows_left_from_old_settings(): void
+    {
+        $project = $this->createProject();
+        $this->upload($project, $this->workbook());
+
+        // Baris masih berkunci nomor baris (pengaturan lama) walau pengaturan sekarang kolom link
+        TargetRow::all()->each(fn (TargetRow $row) => $row->update(['row_key' => 'sheet1!'.$row->row_number]));
+        Storage::disk('local')->deleteDirectory('reports');
+
+        $this->uploadReport($project, $this->csvReport());
+
+        $this->assertSame('done', TargetRow::firstWhere('row_key', self::UUID_A)->status);
+        $this->assertSame(2, $project->kecamatans()->sole()->realisasi);
+    }
+
     public function test_settings_validate_status_codes(): void
     {
         $project = $this->createProject();

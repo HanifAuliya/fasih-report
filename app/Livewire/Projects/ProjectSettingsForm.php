@@ -5,7 +5,7 @@ namespace App\Livewire\Projects;
 use App\Enums\ProjectType;
 use App\Models\Project;
 use App\Models\TargetSheet;
-use App\Services\ReportFileProcessor;
+use App\Services\TargetImporter;
 use App\Services\UnitReportService;
 use App\Support\ProjectSettings;
 use App\Support\StatusSet;
@@ -141,7 +141,7 @@ class ProjectSettingsForm extends Component
 
         // Cara pencocokan / status berubah: data lama langsung disesuaikan, tanpa perlu klik "Proses ulang"
         if ($before !== $this->matchingSettings($this->project->refresh()->config())) {
-            $this->reprocessAll(app(ReportFileProcessor::class), app(UnitReportService::class));
+            $this->reprocessAll(app(TargetImporter::class), app(UnitReportService::class));
             $this->dispatch('toast', message: 'Pengaturan disimpan & data diproses ulang');
 
             return;
@@ -169,26 +169,19 @@ class ProjectSettingsForm extends Component
     }
 
     /**
-     * Impor ulang Excel terbaru tiap unit lalu terapkan ulang laporan aktifnya,
-     * dipakai setelah pengaturan kunci/status diubah.
+     * Hitung ulang kunci baris (dari isi baris yang tersimpan, tanpa membaca file Excel lagi)
+     * lalu terapkan ulang laporan aktif tiap unit; dipakai setelah pengaturan kunci/status diubah.
      */
-    public function reprocessAll(ReportFileProcessor $processor, UnitReportService $unitReports): void
+    public function reprocessAll(TargetImporter $importer, UnitReportService $unitReports): void
     {
         $this->authorize('manage');
 
         $this->processLog = [];
 
-        $workbooks = $this->project->files()->reorder()->oldest('id')->get()
-            ->filter(fn ($file) => $processor->isTargetWorkbook($file))
-            ->groupBy('kecamatan_id')
-            ->map(fn ($group) => $group->last());
-
-        foreach ($workbooks as $workbook) {
-            $this->processLog[] = $workbook->original_name.' → '.($processor->process($workbook) ?? 'dilewati');
-        }
-
         foreach ($this->project->kecamatans()->whereHas('targetRows')->get() as $unit) {
-            $this->processLog[] = $unit->nama.': '.($unitReports->reapply($unit) ?? 'belum ada laporan aktif, status dari Excel awal');
+            $rekeyed = $importer->rekey($unit);
+            $this->processLog[] = $unit->nama.($rekeyed ? " ({$rekeyed} kunci baris diperbarui)" : '').': '
+                .($unitReports->reapply($unit) ?? 'belum ada laporan aktif, status dari Excel awal');
         }
 
         $this->dispatch('toast', message: count($this->processLog).' file diproses ulang');

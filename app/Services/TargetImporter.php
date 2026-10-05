@@ -120,6 +120,44 @@ class TargetImporter
     }
 
     /**
+     * Hitung ulang kunci baris dari isi baris yang sudah tersimpan, sesuai pengaturan sekarang
+     * (mis. setelah cara pencocokan diganti dari nomor baris ke kolom link). Tidak butuh file Excel.
+     *
+     * @return int jumlah baris yang kuncinya berubah
+     */
+    public function rekey(Kecamatan $kecamatan): int
+    {
+        $settings = $kecamatan->project->config();
+        $changed = 0;
+
+        foreach ($kecamatan->targetSheets()->get() as $sheet) {
+            $keyColumn = $settings->keyColumn() !== null ? $sheet->columnIndex($settings->keyColumn()) : null;
+            $sheet->update([
+                'tracked' => $sheet->row_count > 0 && ($settings->keyMode() === ProjectSettings::KEY_ROW || $keyColumn !== null),
+            ]);
+
+            TargetRow::where('target_sheet_id', $sheet->id)
+                ->select(['id', 'row_number', 'row_key', 'cells'])
+                ->chunkById(500, function ($rows) use ($sheet, $settings, $keyColumn, &$changed) {
+                    foreach ($rows as $row) {
+                        $rowKey = match (true) {
+                            ! $sheet->tracked => null,
+                            $settings->keyMode() === ProjectSettings::KEY_ROW => self::sheetRowKey($sheet->name, $row->row_number),
+                            default => self::normalizeKey($row->cells[$keyColumn] ?? null),
+                        };
+
+                        if ($rowKey !== $row->row_key) {
+                            TargetRow::whereKey($row->id)->update(['row_key' => $rowKey]);
+                            $changed++;
+                        }
+                    }
+                });
+        }
+
+        return $changed;
+    }
+
+    /**
      * Kembalikan status semua baris unit ke status awal dari Excel (sebelum laporan apa pun diterapkan).
      */
     public function resetStatuses(Kecamatan $kecamatan): void
