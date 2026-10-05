@@ -272,6 +272,24 @@ textarea.input {
     background-color: #0d1117;
 }
 
+/*
+ * Tabel data unit: gaya sel ditulis sekali di sini, bukan diulang di setiap <td>
+ * (ribuan sel per halaman). Di layer components supaya utility di elemen tetap menang.
+ */
+@layer components {
+    .data-grid :where(th, td) {
+        @apply border-r border-b border-slate-200;
+    }
+
+    .data-grid :where(td) {
+        @apply px-3 py-1.5;
+    }
+
+    .data-grid td.cell {
+        @apply max-w-[16rem] truncate text-slate-700;
+    }
+}
+
 /* Tabel hasil preview Excel (SheetJS) */
 .sheet-preview table {
     @apply w-full border-collapse text-xs;

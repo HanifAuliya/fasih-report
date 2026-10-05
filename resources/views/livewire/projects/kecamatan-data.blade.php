@@ -151,30 +151,30 @@
             {{-- Tabel --}}
             <div class="scroll-thin relative overflow-auto" :class="full ? 'flex-1' : 'h-[calc(100vh-13rem)] min-h-[24rem]'"
                 wire:loading.class="opacity-60" wire:target="sheetId,statusFilter,search,compact,perPage,gotoPage,nextPage,previousPage">
-                <table class="w-full border-separate border-spacing-0 text-xs">
+                <table class="data-grid w-full border-separate border-spacing-0 text-xs">
                     <thead class="sticky top-0 z-10">
                         <tr class="text-left text-[11px] font-semibold text-slate-600">
-                            <th class="sticky left-0 z-10 border-r border-b border-slate-200 bg-slate-100 px-2 py-2.5 text-left text-slate-500">Baris</th>
+                            <th class="sticky left-0 z-10 bg-slate-100 px-2 py-2.5 text-left text-slate-500">Baris</th>
                             @if ($tracked)
-                                <th class="border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 whitespace-nowrap">Status</th>
-                                <th class="border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 whitespace-nowrap">Keterangan</th>
+                                <th class="bg-slate-100 px-3 py-2.5 whitespace-nowrap">Status</th>
+                                <th class="bg-slate-100 px-3 py-2.5 whitespace-nowrap">Keterangan</th>
                             @endif
                             @foreach ($columns as $header)
-                                <th class="border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 font-mono whitespace-nowrap">{{ $header }}</th>
+                                <th class="bg-slate-100 px-3 py-2.5 font-mono whitespace-nowrap">{{ $header }}</th>
                             @endforeach
                         </tr>
                     </thead>
                     <tbody>
                         @forelse ($rows as $row)
                             <tr wire:key="row-{{ $row->id }}" class="group {{ $statuses->rowClasses($row->status) }} hover:bg-brand-50/60">
-                                <td class="sticky left-0 border-r border-b border-slate-200 bg-slate-50 px-2 py-1 group-hover:bg-brand-50">
+                                <td class="sticky left-0 bg-slate-50 px-2 py-1 group-hover:bg-brand-50">
                                     <button type="button" wire:click="openDetail({{ $row->id }})" title="Lihat semua isi baris ini"
                                         class="inline-flex h-6 items-center gap-1.5 rounded-md border border-slate-200 bg-(--surface) px-1.5 text-[11px] font-medium text-slate-600 tabular-nums transition hover:border-brand-500 hover:text-brand-700">
                                         <x-icon name="eye" class="size-3.5" /> {{ $row->row_number }}
                                     </button>
                                 </td>
                                 @if ($tracked)
-                                    <td class="border-r border-b border-slate-200 px-3 py-1.5 whitespace-nowrap">
+                                    <td class="whitespace-nowrap">
                                         @if ($row->status)
                                             <div class="relative inline-flex items-center">
                                                 <span class="badge ring-1 {{ $statuses->badgeClasses($row->status) }}">
@@ -193,11 +193,11 @@
                                             </div>
                                         @endif
                                     </td>
-                                    <td class="max-w-xs truncate border-r border-b border-slate-200 px-3 py-1.5 text-slate-500" title="{{ $row->reason }}">{{ $row->reason }}</td>
+                                    <td class="max-w-xs truncate text-slate-500" title="{{ $row->reason }}">{{ $row->reason }}</td>
                                 @endif
                                 @foreach ($columns as $index => $header)
                                     @php $value = $row->cells[$index] ?? null; @endphp
-                                    <td class="max-w-[16rem] truncate border-r border-b border-slate-200 px-3 py-1.5 text-slate-700" title="{{ $value }}">
+                                    <td class="cell" title="{{ $value }}">
                                         @if ($link = $linkOf($value))
                                             <a href="{{ $link }}" target="_blank" rel="noopener" class="link inline-flex items-center gap-1" title="Buka di tab baru">
                                                 <x-icon name="link" class="size-3" /> Buka
@@ -210,7 +210,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="{{ count($columns) + ($tracked ? 3 : 1) }}" class="px-4 py-12 text-center text-sm text-slate-500">Tidak ada baris yang cocok.</td>
+                                <td colspan="{{ count($columns) + ($tracked ? 3 : 1) }}" class="border-0! px-4 py-12 text-center text-sm text-slate-500">Tidak ada baris yang cocok.</td>
                             </tr>
                         @endforelse
                     </tbody>

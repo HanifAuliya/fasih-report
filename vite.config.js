@@ -9,11 +9,14 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.js'],
             refresh: true,
             fonts: [
+                // Preload hanya bobot yang dipakai hampir di setiap halaman; sisanya dimuat saat dibutuhkan
                 bunny('Inter', {
                     weights: [400, 500, 600, 700],
+                    preload: [{ weight: 400 }, { weight: 600 }],
                 }),
                 bunny('JetBrains Mono', {
                     weights: [400, 500],
+                    preload: false,
                 }),
             ],
         }),

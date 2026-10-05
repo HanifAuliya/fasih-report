@@ -10,6 +10,8 @@ use Illuminate\Validation\Rule;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
+use function Illuminate\Support\defer;
+
 class ScriptManager extends Component
 {
     public Project $project;
@@ -263,9 +265,10 @@ class ScriptManager extends Component
         $scripts = $this->project->scripts()->withCount('versions')->get();
         $selected = $scripts->firstWhere('id', $this->selectedId) ?? $scripts->first();
 
-        // Script GitHub yang sudah lama tidak dicek: ambil versi terbaru saat dibuka
+        // Script GitHub yang sudah lama tidak dicek: ambil versi terbaru setelah halaman terkirim,
+        // supaya pengunjung tidak menunggu request ke GitHub
         if ($selected?->isFromGithub()) {
-            app(GithubScriptSync::class)->syncIfStale($selected);
+            defer(fn () => app(GithubScriptSync::class)->syncIfStale($selected));
         }
 
         return view('livewire.projects.script-manager', [
