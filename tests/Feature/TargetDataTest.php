@@ -302,6 +302,18 @@ class TargetDataTest extends TestCase
         $this->assertSame('dipindah', $rows['BBB-2'][1]);
     }
 
+    public function test_excel_for_missing_default_kecamatan_creates_it_from_filename(): void
+    {
+        $this->project()->kecamatans()->delete();
+
+        $this->upload($this->targetWorkbook('HARUYAN.xlsx'));
+
+        $kecamatan = $this->haruyan();
+        $this->assertSame('HARUYAN', $kecamatan->nama);
+        $this->assertSame(3, $kecamatan->targetRows()->tracked()->count());
+        $this->assertSame(1, $this->project()->kecamatans()->count());
+    }
+
     public function test_changes_export_lists_only_rows_updated_by_json_reports(): void
     {
         $this->upload($this->targetWorkbook());

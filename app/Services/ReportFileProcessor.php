@@ -116,7 +116,8 @@ class ReportFileProcessor
     public function guessUnit(Project $project, string $filename, string $extension, Collection $kecamatans): ?Kecamatan
     {
         if ($project->config()->unitSource() === ProjectSettings::UNIT_KECAMATAN) {
-            return $this->guessKecamatan($filename, $kecamatans);
+            return $this->guessKecamatan($filename, $kecamatans)
+                ?? ($extension === 'xlsx' ? $this->createDefaultKecamatan($project, $filename) : null);
         }
 
         if (preg_match('/bagian\s*0*(\d+)\s*(\(([^)]*)\))?/i', $filename, $match)) {
@@ -162,5 +163,22 @@ class ReportFileProcessor
         }
 
         return null;
+    }
+
+    /**
+     * Excel untuk kecamatan yang belum ada di pekerjaan ini: buat dari daftar kecamatan default
+     * (config fasih.kecamatans) bila nama/kodenya dikenali dari nama file.
+     */
+    private function createDefaultKecamatan(Project $project, string $filename): ?Kecamatan
+    {
+        $defaults = collect(config('fasih.kecamatans'))
+            ->map(fn (string $nama, string|int $kode) => new Kecamatan(['kode' => (string) $kode, 'nama' => $nama]))
+            ->values();
+
+        $known = $this->guessKecamatan($filename, $defaults);
+
+        return $known
+            ? $project->kecamatans()->firstOrCreate(['kode' => $known->kode], ['nama' => $known->nama])
+            : null;
     }
 }
