@@ -313,6 +313,32 @@ class TargetDataTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_rows_can_be_filtered_by_column_values_and_status(): void
+    {
+        $this->upload($this->targetWorkbook());
+        auth()->logout();
+
+        // Kolom 5 = nama_usaha
+        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
+            ->assertSee('Filter kolom')
+            ->set('filterColumn', '')
+            ->assertSet('filterColumn', null)
+            ->set('filterColumn', 5)
+            ->assertSee('WARUNG A')
+            ->call('addColumnFilter', 5, 'WARUNG B')
+            ->assertSet('columnFilters', [5 => 'WARUNG B'])
+            ->assertSee('nama_usaha: WARUNG B')
+            ->assertDontSee('WARUNG A')
+            ->call('removeColumnFilter', 5)
+            ->assertSee('WARUNG A')
+            ->set('statusFilter', 'moved')
+            ->assertSee('WARUNG B')
+            ->assertDontSee('WARUNG C')
+            ->call('clearFilters')
+            ->assertSet('statusFilter', '')
+            ->assertSee('WARUNG C');
+    }
+
     public function test_rows_per_page_only_accepts_listed_sizes(): void
     {
         $this->upload($this->targetWorkbook());
@@ -382,6 +408,10 @@ class TargetDataTest extends TestCase
         })();
         $this->assertSame($read($original, 'xl/styles.xml'), $read($exported, 'xl/styles.xml'));
         $this->assertSame($read($original, 'xl/worksheets/sheet2.xml'), $read($exported, 'xl/worksheets/sheet2.xml'));
+
+        // Filter Excel di seluruh tabel (7 kolom asli + 3 kolom status, judul + 3 baris)
+        $this->assertStringContainsString('<autoFilter ref="A1:J4"/>', $read($exported, 'xl/worksheets/sheet1.xml'));
+        $this->assertStringContainsString("'Pindah'!\$A\$1:\$J\$4</definedName>", $read($exported, 'xl/workbook.xml'));
 
         $pindah = collect(app(TargetImporter::class)->readWorkbook($exported))->firstWhere('name', 'Pindah');
         $rows = collect($pindah['rows'])->keyBy(fn ($cells) => $cells[2]);

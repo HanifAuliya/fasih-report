@@ -145,10 +145,65 @@
                     <input wire:model.live.debounce.300ms="search" type="search" class="input py-1.5 pl-9" placeholder="Cari nama, desa, id…">
                 </div>
 
-                @if ($tracked && $statusFilter !== '')
-                    <button type="button" wire:click="$set('statusFilter', '')" class="badge chip-active px-2.5 py-1">
-                        {{ $statuses->label($statusFilter) }} <x-icon name="x" class="size-3" />
+                @if ($tracked)
+                    <select wire:model.live="statusFilter" class="input w-auto py-1.5 text-xs" title="Saring berdasarkan status">
+                        <option value="">Semua status</option>
+                        @foreach ($statuses->all() as $code => $status)
+                            @if ($statusCounts->get($code))
+                                <option value="{{ $code }}">{{ $status['label'] }} ({{ number_format($statusCounts->get($code), 0, ',', '.') }})</option>
+                            @endif
+                        @endforeach
+                    </select>
+                @endif
+
+                {{-- Filter per kolom ala Excel: pilih kolom, lalu pilih nilainya --}}
+                <div class="relative" x-data="{ open: false, q: '' }" x-on:click.outside="open = false" x-on:keydown.escape="open = false">
+                    <button type="button" x-on:click="open = ! open" class="btn-secondary px-2.5 py-1.5 text-xs" :aria-expanded="open">
+                        <x-icon name="filter" class="size-3.5" /> Filter kolom
+                        @if ($columnFilters)
+                            <span class="rounded-full bg-brand-600 px-1.5 text-[10px] font-semibold text-white">{{ count($columnFilters) }}</span>
+                        @endif
                     </button>
+                    <div x-show="open" x-cloak x-transition.opacity class="card absolute left-0 z-30 mt-1.5 w-80 p-3 shadow-(--shadow-pop)">
+                        <label class="label text-xs">Kolom</label>
+                        <select wire:model.live="filterColumn" class="input py-1.5 text-xs">
+                            <option value="">Pilih kolom…</option>
+                            @foreach ($sheet->headers as $index => $header)
+                                <option value="{{ $index }}">{{ $header }}</option>
+                            @endforeach
+                        </select>
+
+                        @if ($filterColumn !== null)
+                            <input x-model="q" type="search" class="input mt-2 py-1.5 text-xs" placeholder="Cari nilai…">
+                            <ul class="scroll-thin mt-2 max-h-64 space-y-px overflow-y-auto" wire:loading.class="opacity-50" wire:target="filterColumn">
+                                @foreach ($filterValues as $value => $total)
+                                    @php
+                                        $value = (string) $value;
+                                        $valueJs = \Illuminate\Support\Js::from($value);
+                                        $searchJs = \Illuminate\Support\Js::from(mb_strtolower($value));
+                                    @endphp
+                                    <li x-show="! q || {{ $searchJs }}.includes(q.toLowerCase())">
+                                        <button type="button" wire:click="addColumnFilter({{ $filterColumn }}, {{ $valueJs }})" x-on:click="open = false; q = ''"
+                                            class="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-100">
+                                            <span class="truncate {{ $value === '' ? 'text-slate-400 italic' : 'text-slate-700' }}">{{ $value === '' ? '(kosong)' : \Illuminate\Support\Str::limit(strip_tags($value), 60) }}</span>
+                                            <span class="shrink-0 text-slate-400 tabular-nums">{{ number_format($total, 0, ',', '.') }}</span>
+                                        </button>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
+                    </div>
+                </div>
+
+                @foreach ($columnFilters as $column => $value)
+                    <button type="button" wire:key="chip-{{ $column }}" wire:click="removeColumnFilter({{ (int) $column }})" class="badge chip-active max-w-56 px-2.5 py-1" title="Hapus filter ini">
+                        <span class="truncate">{{ $sheet->headers[(int) $column] ?? 'Kolom' }}: {{ $value === '' ? '(kosong)' : \Illuminate\Support\Str::limit(strip_tags($value), 30) }}</span>
+                        <x-icon name="x" class="size-3 shrink-0" />
+                    </button>
+                @endforeach
+
+                @if ($columnFilters || $statusFilter !== '' || $search !== '')
+                    <button type="button" wire:click="clearFilters" class="text-xs text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline">Reset filter</button>
                 @endif
 
                 <div class="ml-auto flex items-center gap-2">
@@ -170,7 +225,7 @@
 
             {{-- Tabel --}}
             <div class="scroll-thin relative overflow-auto" :class="full ? 'flex-1' : 'h-[calc(100vh-13rem)] min-h-[24rem]'"
-                wire:loading.class="opacity-60" wire:target="sheetId,statusFilter,search,compact,perPage,gotoPage,nextPage,previousPage">
+                wire:loading.class="opacity-60" wire:target="sheetId,statusFilter,search,compact,perPage,gotoPage,nextPage,previousPage,addColumnFilter,removeColumnFilter,clearFilters">
                 <table class="data-grid w-full border-separate border-spacing-0 text-xs">
                     <thead class="sticky top-0 z-10">
                         <tr class="text-left text-[11px] font-semibold text-slate-600">

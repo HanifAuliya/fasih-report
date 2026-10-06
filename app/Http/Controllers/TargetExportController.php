@@ -7,6 +7,7 @@ use App\Models\TargetRow;
 use App\Services\OriginalWorkbookExporter;
 use App\Support\StatusSet;
 use OpenSpout\Common\Entity\Row;
+use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\XLSX\Writer;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -54,6 +55,11 @@ class TargetExportController extends Controller
                     $writer->addRow(Row::fromValues($this->rowValues($row, $statuses, $tracked, $processColumn, $initialStatusColumn)));
                 }
             });
+
+            // Tombol filter Excel di baris judul (termasuk kolom status)
+            if ($rowCount = $sheet->rows()->count()) {
+                $writerSheet->setAutoFilter(new AutoFilter(0, 1, count($headers) + ($tracked ? 2 : -1), $rowCount + 1));
+            }
         }
 
         $writer->close();

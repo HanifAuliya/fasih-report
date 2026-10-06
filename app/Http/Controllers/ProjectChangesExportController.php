@@ -10,6 +10,7 @@ use App\Support\StatusSet;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use OpenSpout\Common\Entity\Row;
+use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\XLSX\Writer;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -42,7 +43,7 @@ class ProjectChangesExportController extends Controller
         $writer->getCurrentSheet()->setName('Ringkasan');
         $this->writeSummary($writer, $changedRows(), $units, $statuses, $unitLabel);
 
-        $writer->addNewSheetAndMakeItCurrent()->setName('Baris berubah');
+        $changedSheet = $writer->addNewSheetAndMakeItCurrent()->setName('Baris berubah');
         $writer->addRow(Row::fromValues([
             "Kode {$unitLabel}", $unitLabel, 'Sheet', 'Baris',
             ...$headers,
@@ -75,6 +76,12 @@ class ProjectChangesExportController extends Controller
                     $row->statusFile?->original_name ?? '',
                 ]));
             });
+
+        $changedCount = $changedRows()->count();
+
+        if ($changedCount > 0) {
+            $changedSheet->setAutoFilter(new AutoFilter(0, 1, 4 + count($headers) + 3, $changedCount + 1));
+        }
 
         $writer->close();
 

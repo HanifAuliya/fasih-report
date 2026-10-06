@@ -8,6 +8,7 @@ use App\Models\TargetRow;
 use App\Models\TargetSheet;
 use App\Services\UnitReportService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Collection;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -50,6 +51,17 @@ class KecamatanData extends Component
     /** @var list<int|string> id baris yang dicentang untuk ubah status sekaligus */
     public array $selected = [];
 
+    /**
+     * Filter per kolom ala Excel: index kolom => nilai yang dipilih.
+     *
+     * @var array<int|string, string>
+     */
+    #[Url(as: 'kolom', except: [])]
+    public array $columnFilters = [];
+
+    /** Kolom yang sedang dibuka di panel filter (untuk menampilkan pilihan nilainya). */
+    public ?int $filterColumn = null;
+
     public function mount(Project $project, string $kode): void
     {
         $this->kecamatan = $project->kecamatans()->where('kode', $kode)->firstOrFail();
@@ -57,8 +69,41 @@ class KecamatanData extends Component
 
     public function updatedSheetId(): void
     {
-        $this->reset('statusFilter', 'selected');
+        $this->reset('statusFilter', 'selected', 'columnFilters', 'filterColumn');
         $this->resetPage();
+    }
+
+    public function addColumnFilter(int $column, string $value): void
+    {
+        $this->columnFilters[$column] = $value;
+        $this->reset('filterColumn', 'selected');
+        $this->resetPage();
+    }
+
+    public function removeColumnFilter(int $column): void
+    {
+        unset($this->columnFilters[$column]);
+        $this->reset('selected');
+        $this->resetPage();
+    }
+
+    public function clearFilters(): void
+    {
+        $this->reset('statusFilter', 'search', 'columnFilters', 'filterColumn', 'selected');
+        $this->resetPage();
+    }
+
+    /**
+     * Teks sel seperti yang tampil di tabel, dipakai untuk mencocokkan filter kolom.
+     */
+    public static function cellText(mixed $value): string
+    {
+        return match (true) {
+            $value === null => '',
+            is_bool($value) => $value ? 'TRUE' : 'FALSE',
+            is_float($value) && floor($value) === $value => (string) (int) $value,
+            default => trim((string) $value),
+        };
     }
 
     public function updatedStatusFilter(): void
@@ -200,8 +245,11 @@ class KecamatanData extends Component
         $sheet = $sheets->firstWhere('id', $this->sheetId) ?? $sheets->first();
         $tracked = $sheet?->isTracked() ?? false;
 
+        $filteredIds = $sheet ? $this->idsMatchingColumnFilters($sheet) : null;
+
         $rows = $sheet
             ? $sheet->rows()
+                ->when($filteredIds !== null, fn ($query) => $query->whereIn('id', $filteredIds))
                 ->when($this->statusFilter && $tracked, fn ($query) => $query->where('status', $this->statusFilter))
                 ->when($this->search, fn ($query) => $query->where('cells', 'like', '%'.str_replace(['%', '_'], ['\%', '\_'], $this->search).'%'))
                 ->paginate(in_array($this->perPage, [25, 50, 100, 250, 500], true) ? $this->perPage : 50)
@@ -211,6 +259,7 @@ class KecamatanData extends Component
         $position = $kecamatans->search(fn (Kecamatan $kecamatan) => $kecamatan->is($this->kecamatan));
 
         return view('livewire.projects.kecamatan-data', [
+            'filterValues' => $sheet && $this->filterColumn !== null ? $this->columnValues($sheet, $this->filterColumn) : collect(),
             'sheets' => $sheets,
             'sheet' => $sheet,
             'tracked' => $tracked,
@@ -224,6 +273,44 @@ class KecamatanData extends Component
             'reports' => $this->kecamatan->reports()->with('uploader')->get(),
             'detail' => $this->detailId ? TargetRow::with(['sheet', 'statusFile'])->find($this->detailId) : null,
         ])->title($this->kecamatan->nama.' · '.$this->project->name);
+    }
+
+    /**
+     * Id baris yang lolos semua filter kolom (dicocokkan dengan teks sel seperti di tabel), null bila tanpa filter.
+     *
+     * @return list<int>|null
+     */
+    private function idsMatchingColumnFilters(TargetSheet $sheet): ?array
+    {
+        if ($this->columnFilters === []) {
+            return null;
+        }
+
+        return $sheet->rows()->reorder()->get(['id', 'cells'])
+            ->filter(function (TargetRow $row) {
+                foreach ($this->columnFilters as $column => $value) {
+                    if (self::cellText($row->cells[(int) $column] ?? null) !== $value) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
+            ->pluck('id')
+            ->all();
+    }
+
+    /**
+     * Pilihan nilai satu kolom beserta jumlah barisnya (terbanyak dulu), untuk panel filter.
+     *
+     * @return Collection<string, int>
+     */
+    private function columnValues(TargetSheet $sheet, int $column): Collection
+    {
+        return $sheet->rows()->reorder()->get(['cells'])
+            ->countBy(fn (TargetRow $row) => self::cellText($row->cells[$column] ?? null))
+            ->sortDesc()
+            ->take(300);
     }
 
     /**

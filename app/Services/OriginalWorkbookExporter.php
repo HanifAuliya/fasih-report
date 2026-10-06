@@ -51,6 +51,7 @@ class OriginalWorkbookExporter
 
         $statuses = $unit->project->config()->statuses();
         $sheetPaths = $this->sheetPaths($zip);
+        $filterRanges = [];
 
         // Format file tak terduga: batal, pemanggil memakai export biasa
         try {
@@ -62,8 +63,11 @@ class OriginalWorkbookExporter
                     throw new RuntimeException("Sheet {$sheet->name} tidak terbaca.");
                 }
 
-                $zip->addFromString($xmlPath, $this->writeStatuses($xml, $sheet, $statuses));
+                [$xml, $filterRanges[$sheet->name]] = $this->writeStatuses($xml, $sheet, $statuses);
+                $zip->addFromString($xmlPath, $xml);
             }
+
+            $zip->addFromString('xl/workbook.xml', $this->filterDefinedNames((string) $zip->getFromName('xl/workbook.xml'), $filterRanges));
 
             $zip->close();
         } catch (Throwable $e) {
@@ -77,7 +81,10 @@ class OriginalWorkbookExporter
         return $path;
     }
 
-    private function writeStatuses(string $xml, TargetSheet $sheet, StatusSet $statuses): string
+    /**
+     * @return array{0: string, 1: string} XML sheet baru & range filter (mis. "A1:AF157")
+     */
+    private function writeStatuses(string $xml, TargetSheet $sheet, StatusSet $statuses): array
     {
         $rows = TargetRow::where('target_sheet_id', $sheet->id)
             ->get(['row_number', 'status', 'reason', 'status_at'])
@@ -126,7 +133,74 @@ class OriginalWorkbookExporter
             return $cells === null ? $match[0] : '<row'.preg_replace('/\sspans="[^"]*"/', '', $match[1]).'>'.$cells.'</row>';
         }, $xml) ?? throw new RuntimeException('Sheet terlalu besar untuk diproses: '.preg_last_error_msg());
 
-        return $this->widenDimension($xml, $firstStatusColumn + count(self::STATUS_HEADERS) - 1);
+        $lastColumn = $firstStatusColumn + count(self::STATUS_HEADERS) - 1;
+        $range = 'A'.max(1, $headerRow).':'.self::columnLetter($lastColumn).max($headerRow, (int) $rows->keys()->max());
+
+        return [$this->withAutoFilter($this->widenDimension($xml, $lastColumn), $range), $range];
+    }
+
+    /**
+     * Pasang filter Excel (tombol ▾ di baris judul) di seluruh tabel, termasuk kolom status.
+     * Filter yang sudah ada di file asli hanya diperluas range-nya.
+     */
+    private function withAutoFilter(string $xml, string $range): string
+    {
+        if (preg_match('/<autoFilter\b/', $xml)) {
+            return preg_replace('/(<autoFilter\b[^>]*?\bref=")[^"]*(")/', '${1}'.$range.'${2}', $xml, 1);
+        }
+
+        // Urutan elemen xlsx: autoFilter setelah sheetData (dan sheetCalcPr/sheetProtection/protectedRanges/scenarios)
+        if (! preg_match('/<\/sheetData>|<sheetData\s*\/>/', $xml, $match, PREG_OFFSET_CAPTURE)) {
+            return $xml;
+        }
+
+        $position = $match[0][1] + strlen($match[0][0]);
+
+        while (preg_match('/\G\s*<(sheetCalcPr|sheetProtection|protectedRanges|scenarios)\b(?:[^>]*\/>|.*?<\/\1>)/s', $xml, $next, 0, $position)) {
+            $position += strlen($next[0]);
+        }
+
+        return substr($xml, 0, $position).'<autoFilter ref="'.$range.'"/>'.substr($xml, $position);
+    }
+
+    /**
+     * Excel menyimpan range filter juga sebagai nama tersembunyi _xlnm._FilterDatabase per sheet.
+     *
+     * @param  array<string, string>  $ranges  nama sheet => range
+     */
+    private function filterDefinedNames(string $workbook, array $ranges): string
+    {
+        preg_match_all('/<sheet\b[^>]*\bname="([^"]+)"/', $workbook, $sheets);
+        $names = array_map(fn (string $name) => html_entity_decode($name, ENT_XML1 | ENT_QUOTES, 'UTF-8'), $sheets[1]);
+
+        foreach ($ranges as $sheetName => $range) {
+            $index = array_search($sheetName, $names, true);
+
+            if ($index === false) {
+                continue;
+            }
+
+            [$from, $to] = explode(':', $range);
+            $absolute = fn (string $cell) => preg_replace_callback('/^([A-Z]+)(\d+)$/', fn (array $m) => '$'.$m[1].'$'.$m[2], $cell);
+            $reference = "'".str_replace("'", "''", $sheetName)."'!".$absolute($from).':'.$absolute($to);
+            $definedName = '<definedName name="_xlnm._FilterDatabase" localSheetId="'.$index.'" hidden="1">'
+                .htmlspecialchars($reference, ENT_XML1, 'UTF-8').'</definedName>';
+
+            $pattern = '/<definedName\b[^>]*name="_xlnm\._FilterDatabase"[^>]*localSheetId="'.$index.'"[^>]*>.*?<\/definedName>/s';
+
+            // $ di referensi ($A$1) jangan dibaca sebagai grup regex saat disisipkan
+            $replacement = addcslashes($definedName, '\\$');
+
+            if (preg_match($pattern, $workbook)) {
+                $workbook = preg_replace($pattern, $replacement, $workbook, 1);
+            } elseif (str_contains($workbook, '</definedNames>')) {
+                $workbook = str_replace('</definedNames>', $definedName.'</definedNames>', $workbook);
+            } else {
+                $workbook = preg_replace('/<\/sheets>/', '</sheets><definedNames>'.$replacement.'</definedNames>', $workbook, 1);
+            }
+        }
+
+        return $workbook;
     }
 
     /**
