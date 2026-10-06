@@ -4,25 +4,34 @@ namespace App\Http\Controllers;
 
 use App\Models\Project;
 use App\Models\TargetRow;
+use App\Services\OriginalWorkbookExporter;
 use App\Support\StatusSet;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\XLSX\Writer;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * Download Excel target kecamatan dengan status terbaru.
+ * Download Excel target kecamatan dengan status terbaru: memakai file Excel asli (lihat OriginalWorkbookExporter),
+ * atau dibangun ulang dari data tersimpan bila file asli tidak ada.
  * Baris yang sudah selesai diberi proses=0 dan yang sudah dipindah diberi status_awal=dipindah,
  * jadi file ini bisa langsung dimuat ulang ke userscript untuk melanjutkan sisa pekerjaan.
  */
 class TargetExportController extends Controller
 {
-    public function __invoke(Project $project, string $kode): BinaryFileResponse
+    public function __invoke(Project $project, string $kode, OriginalWorkbookExporter $originalExporter): BinaryFileResponse
     {
         $kecamatan = $project->kecamatans()->where('kode', $kode)->firstOrFail();
         $sheets = $kecamatan->targetSheets()->get();
         $statuses = $project->config()->statuses();
 
         abort_if($sheets->isEmpty(), 404);
+
+        $filename = sprintf('%s_%s_%s_%s.xlsx', str($project->name)->slug('_'), $kecamatan->kode, str($kecamatan->nama)->slug('_'), now()->format('Ymd-Hi'));
+
+        // Utamakan file Excel asli (format tetap utuh); bila tidak tersedia, bangun ulang dari data tersimpan
+        if ($path = $originalExporter->export($kecamatan)) {
+            return response()->download($path, $filename)->deleteFileAfterSend();
+        }
 
         $path = tempnam(sys_get_temp_dir(), 'target').'.xlsx';
         $writer = new Writer;
@@ -48,8 +57,6 @@ class TargetExportController extends Controller
         }
 
         $writer->close();
-
-        $filename = sprintf('%s_%s_%s_%s.xlsx', str($project->name)->slug('_'), $kecamatan->kode, str($kecamatan->nama)->slug('_'), now()->format('Ymd-Hi'));
 
         return response()->download($path, $filename)->deleteFileAfterSend();
     }

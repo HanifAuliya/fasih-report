@@ -26,6 +26,10 @@
                 <span class="transition-transform" :class="history && 'rotate-180'"><x-icon name="chevron-right" class="size-3 rotate-90" /></span>
             </button>
         @endif
+        <a href="{{ route('projects.kecamatan.json', [$project, $kecamatan->kode]) }}" class="btn-secondary btn-sm"
+            title="Status semua baris saat ini (laporan + perubahan manual di web), format sama seperti laporan script">
+            <x-icon name="download" class="size-3.5" /> JSON terkini
+        </a>
         @can('manage')
             <button type="button" wire:click="openReportUpload" class="btn-primary btn-sm">
                 <x-icon name="upload" class="size-3.5" /> Upload JSON

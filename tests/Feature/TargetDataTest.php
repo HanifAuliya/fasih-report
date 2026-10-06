@@ -359,6 +359,75 @@ class TargetDataTest extends TestCase
         $this->assertSame(1, $this->project()->kecamatans()->count());
     }
 
+    public function test_excel_export_keeps_original_workbook_and_includes_manual_changes(): void
+    {
+        $this->upload($this->targetWorkbook());
+        $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'linked', 'reason' => 'ditautkan']]));
+
+        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
+            ->call('setStatus', TargetRow::firstWhere('row_key', 'ccc-3')->id, 'red');
+
+        $response = $this->get(route('projects.kecamatan.export', [$this->project(), '010']))->assertOk();
+        $exported = $response->getFile()->getPathname();
+        $original = Storage::disk('local')->path($this->haruyan()->targetSheets()->first()->sourceFile->path);
+
+        // Bagian lain file asli tidak disentuh: gaya, sheet lain
+        $read = fn (string $path, string $entry) => (function () use ($path, $entry) {
+            $zip = new \ZipArchive;
+            $zip->open($path);
+            $content = $zip->getFromName($entry);
+            $zip->close();
+
+            return $content;
+        })();
+        $this->assertSame($read($original, 'xl/styles.xml'), $read($exported, 'xl/styles.xml'));
+        $this->assertSame($read($original, 'xl/worksheets/sheet2.xml'), $read($exported, 'xl/worksheets/sheet2.xml'));
+
+        $pindah = collect(app(TargetImporter::class)->readWorkbook($exported))->firstWhere('name', 'Pindah');
+        $rows = collect($pindah['rows'])->keyBy(fn ($cells) => $cells[2]);
+        $statuses = $this->project()->config()->statuses();
+
+        $this->assertSame([...self::HEADERS, 'status_web', 'keterangan_web', 'waktu_status_web'], $pindah['headers']);
+        $this->assertSame($statuses->label('linked'), $rows['AAA-1'][7]);
+        $this->assertSame('ditautkan', $rows['AAA-1'][8]);
+        $this->assertSame($statuses->label('red'), $rows['CCC-3'][7], 'perubahan manual ikut terbawa');
+        $this->assertSame('diubah manual di web', $rows['CCC-3'][8]);
+        $this->assertSame('0', $rows['AAA-1'][0]);
+
+        // File asli hilang: tetap bisa download (dibangun ulang dari data tersimpan)
+        Storage::disk('local')->delete($this->haruyan()->targetSheets()->first()->sourceFile->path);
+        $fallback = $this->get(route('projects.kecamatan.export', [$this->project(), '010']))->assertOk();
+        $this->assertSame(
+            [...self::HEADERS, 'status_web', 'keterangan_web', 'waktu_status_web'],
+            app(TargetImporter::class)->readWorkbook($fallback->getFile()->getPathname())[0]['headers'],
+        );
+    }
+
+    public function test_current_status_json_includes_manual_changes_and_can_be_reuploaded(): void
+    {
+        $this->upload($this->targetWorkbook());
+        $row = TargetRow::firstWhere('row_key', 'aaa-1');
+
+        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
+            ->call('setStatus', $row->id, 'closed');
+
+        auth()->logout();
+        $response = $this->get(route('projects.kecamatan.json', [$this->project(), '010']))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/json; charset=utf-8');
+
+        $queue = collect(json_decode($response->getContent(), true)['queue'])->keyBy('id');
+        $this->assertSame('closed', $queue['aaa-1']['status']);
+        $this->assertSame('moved', $queue['bbb-2']['status']);
+        $this->assertSame(2, $queue['aaa-1']['row']);
+
+        // Upload ulang JSON terkini: status sama persis
+        $this->actingAs(User::first());
+        $row->update(['status' => 'pending']);
+        $this->uploadReport(UploadedFile::fake()->createWithContent('status-terkini.json', $response->getContent()));
+        $this->assertSame('closed', $row->refresh()->status);
+    }
+
     public function test_changes_export_lists_only_rows_updated_by_json_reports(): void
     {
         $this->upload($this->targetWorkbook());

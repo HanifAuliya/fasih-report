@@ -8,6 +8,7 @@ use App\Http\Controllers\ProjectChangesExportController;
 use App\Http\Controllers\RawScriptController;
 use App\Http\Controllers\ReportFileController;
 use App\Http\Controllers\TargetExportController;
+use App\Http\Controllers\UnitStatusJsonController;
 use App\Livewire\Auth\Login;
 use App\Livewire\Dashboard;
 use App\Livewire\Projects\Index as ProjectIndex;
@@ -57,6 +58,7 @@ Route::livewire('/data', ProjectIndex::class)->name('projects.index');
 Route::livewire('/data/{project}', ProjectShow::class)->name('projects.show');
 Route::livewire('/data/{project}/kecamatan/{kode}', KecamatanData::class)->name('projects.kecamatan');
 Route::get('/data/{project}/kecamatan/{kode}/excel', TargetExportController::class)->name('projects.kecamatan.export');
+Route::get('/data/{project}/kecamatan/{kode}/json', UnitStatusJsonController::class)->name('projects.kecamatan.json');
 Route::get('/data/{project}/rekap-perubahan', ProjectChangesExportController::class)->name('projects.changes.export');
 
 Route::get('/files/{file}/download', [ReportFileController::class, 'download'])->name('files.download');

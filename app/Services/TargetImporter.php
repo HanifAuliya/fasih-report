@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
+use OpenSpout\Reader\XLSX\Options;
 use OpenSpout\Reader\XLSX\Reader;
 use ZipArchive;
 
@@ -250,7 +251,9 @@ class TargetImporter
         }
 
         $readPath = $this->withoutOversizedDimensions($path);
-        $reader = new Reader;
+        // Baris kosong ikut dihitung supaya nomor baris = nomor baris asli di Excel
+        // (dipakai kunci "Sheet1!4" dan untuk menulis status ke file Excel asli)
+        $reader = new Reader(new Options(SHOULD_PRESERVE_EMPTY_ROWS: true));
         $reader->open($readPath);
 
         $sheets = [];
