@@ -110,6 +110,14 @@ class Project extends Model
             return 0;
         }
 
+        // Ada data baris: progress = baris selesai / semua baris (unit tanpa data tidak menurunkan angka).
+        // Dibulatkan ke bawah supaya 100% hanya muncul bila benar-benar selesai.
+        $target = $kecamatans->sum('target');
+
+        if ($target > 0) {
+            return (int) min(100, floor($kecamatans->sum('realisasi') / $target * 100));
+        }
+
         return (int) round($kecamatans->avg(fn (Kecamatan $k) => $k->percent()));
     }
 }

@@ -153,6 +153,41 @@ Alpine.data('copyButton', () => ({
 }));
 
 // Blok kode dengan syntax highlight + tombol copy
+// Tooltip grafik progress: segmen bar (hover/fokus) dan crosshair grafik garis.
+// Isi tooltip dipasang lewat x-text (bukan innerHTML) karena nama unit berasal dari data.
+Alpine.data('chartTip', () => ({
+    tip: null,
+    cursor: null,
+    show(event, title, rows) {
+        const rect = event.target.getBoundingClientRect();
+        this.tip = { title, rows, x: event.clientX ?? rect.right, y: event.clientY ?? rect.top };
+    },
+    move(event) {
+        if (this.tip) {
+            this.tip.x = event.clientX;
+            this.tip.y = event.clientY;
+        }
+    },
+    hide() {
+        this.tip = null;
+    },
+    trend(event, svg) {
+        // Dibaca ulang setiap kali: data titik ikut berubah saat Livewire merender ulang
+        const points = JSON.parse(svg.dataset.points);
+        const rect = svg.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) * svg.viewBox.baseVal.width;
+        const point = points.reduce((best, p) => (Math.abs(p.x - x) < Math.abs(best.x - x) ? p : best));
+
+        this.cursor = point;
+        this.tip = {
+            title: point.label,
+            rows: [['baris selesai', point.total], ['hari itu', `+${point.added}`]],
+            x: event.clientX,
+            y: event.clientY,
+        };
+    },
+}));
+
 // Kode panjang hanya ditampilkan sebagian (truncated) dan tidak di-highlight bila besar,
 // karena highlight ribuan baris sekaligus membuat browser berat.
 const HIGHLIGHT_LIMIT = 60_000;

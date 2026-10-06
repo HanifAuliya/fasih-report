@@ -12,15 +12,19 @@ use Illuminate\Support\Collection;
  */
 class StatusSet
 {
+    /**
+     * Warna penanda & segmen grafik: di mode gelap hijau/kuning/merah/teal/cyan satu tingkat lebih gelap
+     * (lolos uji kecerahan & buta warna terhadap latar gelap).
+     */
     public const COLORS = [
         'slate' => ['badge' => 'bg-slate-100 text-slate-700 ring-slate-500/20', 'row' => '', 'dot' => 'bg-slate-400'],
         'blue' => ['badge' => 'bg-blue-50 text-blue-700 ring-blue-600/20', 'row' => '', 'dot' => 'bg-blue-500'],
         'violet' => ['badge' => 'bg-violet-50 text-violet-700 ring-violet-600/20', 'row' => 'bg-violet-50/40', 'dot' => 'bg-violet-500'],
-        'emerald' => ['badge' => 'bg-emerald-50 text-emerald-700 ring-emerald-600/20', 'row' => 'bg-emerald-50/50', 'dot' => 'bg-emerald-500'],
-        'teal' => ['badge' => 'bg-teal-50 text-teal-700 ring-teal-600/20', 'row' => 'bg-teal-50/50', 'dot' => 'bg-teal-500'],
-        'cyan' => ['badge' => 'bg-cyan-50 text-cyan-700 ring-cyan-600/20', 'row' => 'bg-cyan-50/40', 'dot' => 'bg-cyan-500'],
-        'amber' => ['badge' => 'bg-amber-50 text-amber-700 ring-amber-600/20', 'row' => 'bg-amber-50/50', 'dot' => 'bg-amber-500'],
-        'rose' => ['badge' => 'bg-rose-50 text-rose-700 ring-rose-600/20', 'row' => 'bg-rose-50/50', 'dot' => 'bg-rose-500'],
+        'emerald' => ['badge' => 'bg-emerald-50 text-emerald-700 ring-emerald-600/20', 'row' => 'bg-emerald-50/50', 'dot' => 'bg-emerald-500 dark:bg-emerald-600'],
+        'teal' => ['badge' => 'bg-teal-50 text-teal-700 ring-teal-600/20', 'row' => 'bg-teal-50/50', 'dot' => 'bg-teal-500 dark:bg-teal-600'],
+        'cyan' => ['badge' => 'bg-cyan-50 text-cyan-700 ring-cyan-600/20', 'row' => 'bg-cyan-50/40', 'dot' => 'bg-cyan-500 dark:bg-cyan-600'],
+        'amber' => ['badge' => 'bg-amber-50 text-amber-700 ring-amber-600/20', 'row' => 'bg-amber-50/50', 'dot' => 'bg-amber-500 dark:bg-amber-600'],
+        'rose' => ['badge' => 'bg-rose-50 text-rose-700 ring-rose-600/20', 'row' => 'bg-rose-50/50', 'dot' => 'bg-rose-500 dark:bg-rose-600'],
     ];
 
     /** @var Collection<string, array{code: string, label: string, color: string, done: bool, aliases: list<string>}> */

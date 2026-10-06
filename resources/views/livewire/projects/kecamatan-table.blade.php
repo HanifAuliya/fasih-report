@@ -82,9 +82,9 @@
                 </div>
             </div>
 
-            <div class="mt-4 flex h-2.5 overflow-hidden rounded-full bg-slate-200/70">
+            <div class="mt-4 flex h-2.5 gap-[2px]">
                 @foreach ($orderedCounts as $code => $count)
-                    <span class="{{ $statuses->dotClasses($code) }}" style="width: {{ $count / $overallTotal * 100 }}%"
+                    <span class="min-w-[3px] first:rounded-l-full last:rounded-r-full {{ $statuses->dotClasses($code) }}" style="width: {{ $count / $overallTotal * 100 }}%"
                         title="{{ $statuses->label($code) }}: {{ number_format($count, 0, ',', '.') }}"></span>
                 @endforeach
             </div>
@@ -107,6 +107,8 @@
                 @endforeach
             </div>
         </div>
+
+        @include('livewire.projects.partials.progress-charts')
     @endif
 
     <div class="card overflow-x-auto">

@@ -127,7 +127,23 @@ class TargetDataTest extends TestCase
         // 3 baris: 1 ditautkan (selesai), 1 gagal, 1 dipindah
         Livewire::test(KecamatanTable::class, ['project' => $this->project()])
             ->assertSee('Ringkasan keseluruhan')
-            ->assertSeeInOrder(['Selesai', '1', 'Belum selesai', '2', 'Progress', '33%']);
+            ->assertSeeInOrder(['Selesai', '1', 'Belum selesai', '2', 'Progress', '33%'])
+            ->assertSee('Status per kecamatan')
+            ->assertSee('Grafik muncul setelah ada baris selesai di lebih dari satu hari.');
+
+        // Progress pekerjaan dihitung dari baris (1 dari 3), kecamatan lain yang belum ada data tidak menurunkannya
+        $this->assertSame(33, $this->project()->progress());
+
+        // Baris selesai di hari kedua: grafik perkembangan muncul
+        $this->uploadReport($this->jsonReport([
+            ['assignment_id' => 'AAA-1', 'status' => 'linked', 'doneAt' => '2026-10-04T08:00:00Z'],
+            ['assignment_id' => 'ccc-3', 'status' => 'closed', 'doneAt' => '2026-10-05T08:00:00Z'],
+        ], 'laporan-hari-2.json'));
+
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])
+            ->assertSee('Perkembangan baris selesai')
+            ->assertSee('data-points=', false)
+            ->assertDontSee('Grafik muncul setelah');
         $this->assertStringContainsString('1 tidak ditemukan', $this->project()->files()->where('extension', 'json')->first()->summary);
     }
 
