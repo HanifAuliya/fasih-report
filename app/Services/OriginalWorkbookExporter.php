@@ -6,6 +6,7 @@ use App\Models\Kecamatan;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
 use App\Support\StatusSet;
+use App\Support\XlsxStyleBook;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -52,6 +53,8 @@ class OriginalWorkbookExporter
         $statuses = $unit->project->config()->statuses();
         $sheetPaths = $this->sheetPaths($zip);
         $filterRanges = [];
+        $stylesXml = $zip->getFromName('xl/styles.xml');
+        $styleBook = $stylesXml !== false ? new XlsxStyleBook($stylesXml) : null;
 
         // Format file tak terduga: batal, pemanggil memakai export biasa
         try {
@@ -63,8 +66,12 @@ class OriginalWorkbookExporter
                     throw new RuntimeException("Sheet {$sheet->name} tidak terbaca.");
                 }
 
-                [$xml, $filterRanges[$sheet->name]] = $this->writeStatuses($xml, $sheet, $statuses);
+                [$xml, $filterRanges[$sheet->name]] = $this->writeStatuses($xml, $sheet, $statuses, $styleBook);
                 $zip->addFromString($xmlPath, $xml);
+            }
+
+            if ($styleBook) {
+                $zip->addFromString('xl/styles.xml', $styleBook->toXml());
             }
 
             $zip->addFromString('xl/workbook.xml', $this->filterDefinedNames((string) $zip->getFromName('xl/workbook.xml'), $filterRanges));
@@ -84,7 +91,7 @@ class OriginalWorkbookExporter
     /**
      * @return array{0: string, 1: string} XML sheet baru & range filter (mis. "A1:AF157")
      */
-    private function writeStatuses(string $xml, TargetSheet $sheet, StatusSet $statuses): array
+    private function writeStatuses(string $xml, TargetSheet $sheet, StatusSet $statuses, ?XlsxStyleBook $styleBook): array
     {
         $rows = TargetRow::where('target_sheet_id', $sheet->id)
             ->get(['row_number', 'status', 'reason', 'status_at'])
@@ -96,19 +103,22 @@ class OriginalWorkbookExporter
         $initialStatusColumn = array_search('status_awal', $lowerHeaders, true);
         $headerRow = $this->headerRow($xml, (int) $rows->keys()->min());
 
-        $xml = preg_replace_callback('/<row\b([^>]*?)(?:\/>|>(.*?)<\/row>)/s', function (array $match) use ($rows, $headerRow, $firstStatusColumn, $processColumn, $initialStatusColumn, $statuses) {
+        $xml = preg_replace_callback('/<row\b([^>]*?)(?:\/>|>(.*?)<\/row>)/s', function (array $match) use ($rows, $headerRow, $firstStatusColumn, $processColumn, $initialStatusColumn, $statuses, $styleBook) {
             if (! preg_match('/\br="(\d+)"/', $match[1], $number)) {
                 return $match[0];
             }
 
             $rowNumber = (int) $number[1];
             $values = [];
+            // Gaya kolom baru: ikut gaya sel asli terakhir di baris itu; sel status diberi warna status
+            $statusColor = null;
 
             if ($rowNumber === $headerRow) {
                 foreach (self::STATUS_HEADERS as $offset => $header) {
                     $values[$firstStatusColumn + $offset] = $header;
                 }
             } elseif ($row = $rows->get($rowNumber)) {
+                $statusColor = $row->status ? ($statuses->all()[$row->status]['color'] ?? 'slate') : null;
                 $values = [
                     $firstStatusColumn => $row->status ? $statuses->label($row->status) : '',
                     $firstStatusColumn + 1 => (string) $row->reason,
@@ -128,7 +138,17 @@ class OriginalWorkbookExporter
                 return $match[0];
             }
 
-            $cells = $this->setCells($match[2] ?? '', $rowNumber, $values);
+            $styleFor = function (?int $baseXf) use ($firstStatusColumn, $statusColor, $styleBook) {
+                $styles = array_fill_keys(range($firstStatusColumn, $firstStatusColumn + count(self::STATUS_HEADERS) - 1), $baseXf);
+
+                if ($statusColor && $styleBook) {
+                    $styles[$firstStatusColumn] = $styleBook->statusStyle($baseXf, $statusColor) ?? $baseXf;
+                }
+
+                return $styles;
+            };
+
+            $cells = $this->setCells($match[2] ?? '', $rowNumber, $values, $firstStatusColumn, $styleFor);
 
             return $cells === null ? $match[0] : '<row'.preg_replace('/\sspans="[^"]*"/', '', $match[1]).'>'.$cells.'</row>';
         }, $xml) ?? throw new RuntimeException('Sheet terlalu besar untuk diproses: '.preg_last_error_msg());
@@ -205,11 +225,13 @@ class OriginalWorkbookExporter
 
     /**
      * Ganti/tambah sel di satu baris dengan urutan kolom tetap benar (syarat format xlsx).
-     * Gaya (s="…") sel lama dipertahankan.
+     * Gaya (s="…") sel lama dipertahankan; kolom baru memakai gaya dari $styleFor
+     * (dipanggil dengan gaya sel asli terakhir sebelum $firstNewColumn).
      *
      * @param  array<int, string|int>  $values  index kolom (0 = A) => nilai
+     * @param  callable(?int): array<int, ?int>  $styleFor
      */
-    private function setCells(string $inner, int $rowNumber, array $values): ?string
+    private function setCells(string $inner, int $rowNumber, array $values, int $firstNewColumn, callable $styleFor): ?string
     {
         preg_match_all('/<c\b[^>]*?(?:\/>|>.*?<\/c>)/s', $inner, $matches);
         $cells = [];
@@ -222,9 +244,16 @@ class OriginalWorkbookExporter
             $cells[self::columnIndex($ref[1])] = $cell;
         }
 
+        $baseColumn = collect(array_keys($cells))->filter(fn (int $column) => $column < $firstNewColumn)->max();
+        $baseXf = $baseColumn !== null && preg_match('/\ss="(\d+)"/', $cells[$baseColumn], $s) ? (int) $s[1] : null;
+        $newStyles = $styleFor($baseXf);
+
         foreach ($values as $column => $value) {
             $existing = $cells[$column] ?? '';
-            $style = preg_match('/\ss="(\d+)"/', $existing, $s) ? ' s="'.$s[1].'"' : '';
+            $xf = array_key_exists($column, $newStyles)
+                ? $newStyles[$column]
+                : (preg_match('/\ss="(\d+)"/', $existing, $s) ? (int) $s[1] : null);
+            $style = $xf ? ' s="'.$xf.'"' : '';
             $ref = self::columnLetter($column).$rowNumber;
 
             // Angka ditulis sebagai teks bila sel aslinya teks (mis. proses "1" -> "0")

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
 use App\Support\StatusSet;
+use App\Support\XlsxStyleBook;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use OpenSpout\Common\Entity\Row;
@@ -64,7 +65,7 @@ class ProjectChangesExportController extends Controller
                     array_slice($row->cells, 0, count($sheet->headers)),
                 ) : [];
 
-                $writer->addRow(Row::fromValues([
+                $values = [
                     $unit?->kode ?? '',
                     $unit?->nama ?? '',
                     $sheet?->name ?? '',
@@ -74,7 +75,11 @@ class ProjectChangesExportController extends Controller
                     $row->reason ?? '',
                     $row->status_at?->format('Y-m-d H:i') ?? '',
                     $row->statusFile?->original_name ?? '',
-                ]));
+                ];
+                $style = XlsxStyleBook::openSpoutStyle($statuses->all()[$row->status]['color'] ?? null);
+
+                // Sel Status berwarna sesuai status
+                $writer->addRow($style ? Row::fromValuesWithStyles($values, [4 + count($headers) => $style]) : Row::fromValues($values));
             });
 
         $changedCount = $changedRows()->count();

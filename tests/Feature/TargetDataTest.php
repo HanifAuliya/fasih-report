@@ -397,7 +397,7 @@ class TargetDataTest extends TestCase
         $exported = $response->getFile()->getPathname();
         $original = Storage::disk('local')->path($this->haruyan()->targetSheets()->first()->sourceFile->path);
 
-        // Bagian lain file asli tidak disentuh: gaya, sheet lain
+        // Bagian lain file asli tidak disentuh: sheet lain, dan gaya lama tetap (gaya status hanya ditambahkan di belakang)
         $read = fn (string $path, string $entry) => (function () use ($path, $entry) {
             $zip = new \ZipArchive;
             $zip->open($path);
@@ -406,8 +406,18 @@ class TargetDataTest extends TestCase
 
             return $content;
         })();
-        $this->assertSame($read($original, 'xl/styles.xml'), $read($exported, 'xl/styles.xml'));
         $this->assertSame($read($original, 'xl/worksheets/sheet2.xml'), $read($exported, 'xl/worksheets/sheet2.xml'));
+
+        $cellXfs = fn (string $styles) => preg_match('/<cellXfs\b[^>]*>(.*?)<\/cellXfs>/s', $styles, $m) ? $m[1] : '';
+        $originalXfs = $cellXfs($read($original, 'xl/styles.xml'));
+        $exportedStyles = $read($exported, 'xl/styles.xml');
+        $this->assertStringStartsWith($originalXfs, $cellXfs($exportedStyles));
+        $this->assertStringContainsString('<color rgb="FF047857"/>', $exportedStyles, 'huruf hijau untuk status selesai');
+        $this->assertStringContainsString('<fgColor rgb="FFFFE4E6"/>', $exportedStyles, 'latar merah muda untuk status gagal');
+
+        // Sel status_web (kolom H) di baris AAA-1 memakai gaya baru, bukan gaya bawaan
+        preg_match('/<c r="H2" s="(\d+)"/', $read($exported, 'xl/worksheets/sheet1.xml'), $statusCell);
+        $this->assertGreaterThanOrEqual(substr_count($originalXfs, '<xf'), (int) ($statusCell[1] ?? -1));
 
         // Filter Excel di seluruh tabel (7 kolom asli + 3 kolom status, judul + 3 baris)
         $this->assertStringContainsString('<autoFilter ref="A1:J4"/>', $read($exported, 'xl/worksheets/sheet1.xml'));

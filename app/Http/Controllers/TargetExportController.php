@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\TargetRow;
 use App\Services\OriginalWorkbookExporter;
 use App\Support\StatusSet;
+use App\Support\XlsxStyleBook;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\XLSX\Writer;
@@ -52,7 +53,13 @@ class TargetExportController extends Controller
 
             $sheet->rows()->chunk(500, function ($rows) use ($writer, $statuses, $tracked, $processColumn, $initialStatusColumn) {
                 foreach ($rows as $row) {
-                    $writer->addRow(Row::fromValues($this->rowValues($row, $statuses, $tracked, $processColumn, $initialStatusColumn)));
+                    $values = $this->rowValues($row, $statuses, $tracked, $processColumn, $initialStatusColumn);
+                    $style = $tracked && $row->status ? XlsxStyleBook::openSpoutStyle($statuses->all()[$row->status]['color'] ?? null) : null;
+
+                    // Sel status_web berwarna sesuai status
+                    $writer->addRow($style
+                        ? Row::fromValuesWithStyles($values, [count($values) - 3 => $style])
+                        : Row::fromValues($values));
                 }
             });
 
