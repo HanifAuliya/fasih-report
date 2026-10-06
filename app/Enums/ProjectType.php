@@ -60,6 +60,7 @@ enum ProjectType: string
                     ['code' => 'moved', 'label' => 'Dipindah', 'color' => 'violet', 'done' => false, 'aliases' => ['dipindah', 'dipindah, belum ditautkan']],
                     ['code' => 'linked', 'label' => 'Ditautkan', 'color' => 'emerald', 'done' => true, 'aliases' => ['selesai: ditautkan']],
                     ['code' => 'closed', 'label' => 'OSS tutup', 'color' => 'teal', 'done' => true, 'aliases' => ['selesai: oss tutup']],
+                    ['code' => 'ganda', 'label' => 'OSS ganda', 'color' => 'fuchsia', 'done' => true, 'aliases' => ['oss ganda', 'selesai: oss ganda']],
                     ['code' => 'tested', 'label' => 'Uji', 'color' => 'cyan', 'done' => false, 'aliases' => ['terisi (uji)']],
                     ['code' => 'yellow', 'label' => 'Perlu cek', 'color' => 'amber', 'done' => false, 'aliases' => ['kuning']],
                     ['code' => 'red', 'label' => 'Gagal', 'color' => 'rose', 'done' => false, 'aliases' => ['merah']],

@@ -22,6 +22,9 @@ class StatusReportImporter
 
     private const TIME_FIELDS = ['doneAt', 'done_at', 'waktu', 'time'];
 
+    /** Field hasil rinci yang bisa memperjelas status selesai (lihat parse()). */
+    private const DETAIL_FIELDS = ['linkResult', 'link_result'];
+
     private const MAX_RESULT_FIELDS = 40;
 
     /**
@@ -120,6 +123,15 @@ class StatusReportImporter
             $rowKey = $this->rowKey($item, $settings);
             $rawStatus = $this->firstField($item, self::STATUS_FIELDS);
             $status = $statuses->resolve($rawStatus);
+
+            // Hasil rinci dari script (mis. OSS: closed + linkResult "ganda"): bila cocok dengan status
+            // selesai lain di pengaturan, pakai status yang lebih rinci itu
+            $detail = $this->firstField($item, self::DETAIL_FIELDS);
+            $refined = $detail !== null && $statuses->isDone($status) ? $statuses->resolve($detail) : null;
+
+            if ($refined !== null && $statuses->isDone($refined)) {
+                $status = $refined;
+            }
 
             if ($rowKey === null) {
                 $this->lastParse['without_key']++;

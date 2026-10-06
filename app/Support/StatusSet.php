@@ -25,6 +25,7 @@ class StatusSet
         'cyan' => ['badge' => 'bg-cyan-50 text-cyan-700 ring-cyan-600/20', 'row' => 'bg-cyan-50/40', 'dot' => 'bg-cyan-500 dark:bg-cyan-600'],
         'amber' => ['badge' => 'bg-amber-50 text-amber-700 ring-amber-600/20', 'row' => 'bg-amber-50/50', 'dot' => 'bg-amber-500 dark:bg-amber-600'],
         'rose' => ['badge' => 'bg-rose-50 text-rose-700 ring-rose-600/20', 'row' => 'bg-rose-50/50', 'dot' => 'bg-rose-500 dark:bg-rose-600'],
+        'fuchsia' => ['badge' => 'bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-600/20', 'row' => 'bg-fuchsia-50/40', 'dot' => 'bg-fuchsia-500 dark:bg-fuchsia-600'],
     ];
 
     /** @var Collection<string, array{code: string, label: string, color: string, done: bool, aliases: list<string>}> */

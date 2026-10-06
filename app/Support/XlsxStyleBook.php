@@ -25,6 +25,7 @@ class XlsxStyleBook
         'cyan' => ['fill' => 'CFFAFE', 'font' => '0E7490'],
         'amber' => ['fill' => 'FEF3C7', 'font' => 'B45309'],
         'rose' => ['fill' => 'FFE4E6', 'font' => 'BE123C'],
+        'fuchsia' => ['fill' => 'FAE8FF', 'font' => 'A21CAF'],
     ];
 
     /** @var array<string, Style> */

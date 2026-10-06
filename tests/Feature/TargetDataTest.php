@@ -137,6 +137,40 @@ class TargetDataTest extends TestCase
         $this->assertStringContainsString('1 tidak ditemukan', $this->project()->files()->where('extension', 'json')->first()->summary);
     }
 
+    public function test_oss_duplicate_result_gets_its_own_status(): void
+    {
+        $this->upload($this->targetWorkbook());
+
+        $this->uploadReport($this->jsonReport([
+            ['id' => 'aaa-1', 'status' => 'closed', 'linkResult' => 'ganda', 'reason' => 'OSS Ganda'],
+            ['id' => 'bbb-2', 'status' => 'closed', 'linkResult' => 'nousaha'],
+            ['id' => 'ccc-3', 'status' => 'red', 'linkResult' => 'ganda'],
+        ]));
+
+        $this->assertSame('ganda', TargetRow::firstWhere('row_key', 'aaa-1')->status);
+        $this->assertSame('closed', TargetRow::firstWhere('row_key', 'bbb-2')->status);
+        $this->assertSame('red', TargetRow::firstWhere('row_key', 'ccc-3')->status, 'gagal tetap gagal walau hasilnya ganda');
+        $this->assertSame(2, $this->haruyan()->realisasi, 'OSS ganda dihitung selesai');
+    }
+
+    public function test_existing_oss_projects_get_duplicate_status_from_migration(): void
+    {
+        $this->upload($this->targetWorkbook());
+        $project = $this->project();
+        $settings = $project->settings;
+        $settings['statuses'] = collect($settings['statuses'])->reject(fn ($status) => $status['code'] === 'ganda')->values()->all();
+        $project->update(['settings' => $settings]);
+
+        $row = TargetRow::firstWhere('row_key', 'aaa-1');
+        $row->update(['status' => 'closed', 'result' => ['linkResult' => 'ganda']]);
+
+        $migration = require database_path('migrations/2026_10_06_113949_add_oss_ganda_status.php');
+        $migration->up();
+
+        $this->assertSame('ganda', $row->refresh()->status);
+        $this->assertSame('OSS ganda', $project->refresh()->config()->statuses()->label('ganda'));
+    }
+
     public function test_newest_report_is_active_and_older_report_can_be_reactivated(): void
     {
         $this->upload($this->targetWorkbook());
