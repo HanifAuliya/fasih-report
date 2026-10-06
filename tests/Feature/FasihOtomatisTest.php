@@ -111,6 +111,37 @@ class FasihOtomatisTest extends TestCase
         $this->assertSame('desa tidak terdeteksi', $first->reason);
     }
 
+    public function test_bagian_number_never_overwrites_unit_that_already_uses_its_code(): void
+    {
+        $project = $this->createProject();
+        $this->seedBagians($project);
+
+        // File tanpa "Bagian" di nama: jadi unit berkode berikutnya (03), lalu diberi nama lain
+        $this->upload($project, $this->bagianWorkbook('Rekap terkirim baris 1-622.xlsx', [
+            ['2026-09-19', 'REKAP SATU', 'SAYUR', null, 'BARABAI', 'BARABAI DARAT'],
+        ]));
+        $rekap = $project->kecamatans()->where('kode', '03')->sole();
+        $rekap->update(['nama' => 'BAGIAN 00 (1-622)']);
+
+        $this->upload($project, $this->bagianWorkbook('Bagian 3 (BAT Bagian 2).xlsx', [
+            ['2026-09-22', 'BARU SATU', 'KUE', null, 'LIMPASU', 'KARAU'],
+            ['2026-09-22', 'BARU DUA', 'KUE', null, 'LIMPASU', 'KARAU'],
+        ]));
+
+        $this->assertSame(1, $rekap->refresh()->target, 'unit yang sudah ada tidak tertimpa');
+        $bagian = $project->kecamatans()->where('nama', 'BAGIAN 03')->sole();
+        $this->assertSame('04', $bagian->kode);
+        $this->assertSame('BAT Bagian 2', $bagian->catatan);
+        $this->assertSame(2, $bagian->target);
+
+        // Upload ulang file yang sama masuk ke unit BAGIAN 03 yang sama
+        $this->upload($project, $this->bagianWorkbook('Bagian 03 (BAT Bagian 2).xlsx', [
+            ['2026-09-22', 'BARU SATU', 'KUE', null, 'LIMPASU', 'KARAU'],
+        ]));
+        $this->assertSame(1, $bagian->refresh()->target);
+        $this->assertSame(4, $project->kecamatans()->count());
+    }
+
     private function uploadReport(Project $project, string $kode, UploadedFile $file): void
     {
         Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $kode])

@@ -120,9 +120,24 @@ class ReportFileProcessor
                 ?? ($extension === 'xlsx' ? $this->createDefaultKecamatan($project, $filename) : null);
         }
 
+        $nextKode = fn () => str_pad((string) ((int) $kecamatans->max(fn (Kecamatan $unit) => (int) $unit->kode) + 1), 2, '0', STR_PAD_LEFT);
+
         if (preg_match('/bagian\s*0*(\d+)\s*(\(([^)]*)\))?/i', $filename, $match)) {
             $kode = str_pad($match[1], 2, '0', STR_PAD_LEFT);
-            $attributes = ['nama' => 'BAGIAN '.$kode, 'catatan' => $match[3] ?? null];
+            $nama = 'BAGIAN '.$kode;
+
+            // Cocokkan lewat nama unit, bukan kode: kode bisa sudah dipakai unit lain
+            // (mis. unit dari file "Rekap ….xlsx" yang mendapat kode berikutnya)
+            $unit = $kecamatans->first(fn (Kecamatan $unit) => str_starts_with(mb_strtoupper(trim($unit->nama)), $nama));
+
+            // Laporan boleh jatuh ke kode (unit salah akan ditolak karena tidak ada baris cocok);
+            // Excel tidak, supaya tidak menimpa isi unit lain
+            if ($unit || $extension !== 'xlsx') {
+                return $unit ?? $kecamatans->firstWhere('kode', $kode);
+            }
+
+            $kode = $kecamatans->contains('kode', $kode) ? $nextKode() : $kode;
+            $attributes = ['nama' => $nama, 'catatan' => $match[3] ?? null];
         } elseif ($extension === 'xlsx') {
             $name = mb_strtoupper(mb_substr(trim(preg_replace('/[\s_]+/', ' ', pathinfo($filename, PATHINFO_FILENAME))), 0, 100));
 
@@ -130,14 +145,13 @@ class ReportFileProcessor
                 return $unit;
             }
 
-            $kode = str_pad((string) ((int) $kecamatans->max(fn (Kecamatan $unit) => (int) $unit->kode) + 1), 2, '0', STR_PAD_LEFT);
+            $kode = $nextKode();
             $attributes = ['nama' => $name, 'catatan' => null];
         } else {
             return null;
         }
 
-        return $kecamatans->firstWhere('kode', $kode)
-            ?? ($extension === 'xlsx' ? $project->kecamatans()->create(['kode' => $kode, ...$attributes]) : null);
+        return $project->kecamatans()->create(['kode' => $kode, ...$attributes]);
     }
 
     /**
