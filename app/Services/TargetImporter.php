@@ -7,6 +7,7 @@ use App\Models\ReportFile;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
 use App\Support\ProjectSettings;
+use App\Support\XlsxPackage;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -257,38 +258,53 @@ class TargetImporter
         $reader->open($readPath);
 
         $sheets = [];
+        $package = new ZipArchive;
+        $sheetPaths = $package->open($path, ZipArchive::RDONLY) === true ? XlsxPackage::sheetPaths($package) : [];
 
         try {
             foreach ($reader->getSheetIterator() as $sheet) {
-                $headerValues = null;
+                $links = isset($sheetPaths[$sheet->getName()]) ? XlsxPackage::hyperlinks($package, $sheetPaths[$sheet->getName()]) : [];
+                $linksByRow = [];
+
+                foreach ($links as $ref => $url) {
+                    preg_match('/^([A-Z]+)(\d+)$/', $ref, $cell);
+                    $linksByRow[(int) $cell[2]][XlsxPackage::columnIndex($cell[1])] = $url;
+                }
+
                 $rows = [];
                 $rowNumber = 0;
-                $width = 0;
 
                 foreach ($sheet->getRowIterator() as $row) {
                     $rowNumber++;
                     // Sel rumus (mis. "=P2+Q2") diambil hasil hitungnya, bukan teks rumusnya.
-                    // Sel kosong di ujung kanan dibuang: Excel yang pernah diformat satu baris penuh
-                    // bisa terbaca sampai 16.384 kolom kosong.
-                    $values = $this->trimTrailingEmpty(array_map(
+                    $values = array_map(
                         fn (Cell $cell) => $this->normalizeCell($cell instanceof FormulaCell ? ($cell->getComputedValue() ?? $cell->getValue()) : $cell->getValue()),
                         $row->cells,
-                    ));
+                    );
 
-                    if ($values === []) {
-                        continue;
+                    // Sel ber-hyperlink (teksnya sering cuma "Link"): ambil alamat URL-nya
+                    foreach ($linksByRow[$rowNumber] ?? [] as $column => $url) {
+                        $values = array_pad($values, $column + 1, null);
+                        $values[$column] = $this->hyperlinkValue($values[$column], $url);
                     }
 
-                    $width = max($width, count($values));
+                    // Sel kosong di ujung kanan dibuang: Excel yang pernah diformat satu baris penuh
+                    // bisa terbaca sampai 16.384 kolom kosong.
+                    $values = $this->trimTrailingEmpty($values);
 
-                    if ($headerValues === null) {
-                        $headerValues = $values;
-
-                        continue;
+                    if ($values !== []) {
+                        $rows[$rowNumber] = $values;
                     }
-
-                    $rows[$rowNumber] = $values;
                 }
+
+                // Baris judul laporan di atas tabel (mis. "DATA MIKRO …", "Wilayah: …") dilewati:
+                // header = baris pertama yang isinya selebar tabel.
+                $headerRow = $this->headerRowNumber($rows);
+                $headerValues = $headerRow !== null ? $rows[$headerRow] : null;
+                $rows = array_filter($rows, fn (int $number) => $headerRow !== null && $number > $headerRow, ARRAY_FILTER_USE_KEY);
+                // Baris nomor kolom di bawah header ala tabel BPS: "(1)", "(2)", …
+                $rows = array_filter($rows, fn (array $values) => ! $this->isColumnNumberRow($values));
+                $width = max(count($headerValues ?? []), ...array_map('count', $rows ?: [[]]));
 
                 $sheets[] = [
                     'name' => $sheet->getName(),
@@ -298,6 +314,10 @@ class TargetImporter
             }
         } finally {
             $reader->close();
+
+            if ($sheetPaths !== []) {
+                $package->close();
+            }
 
             if ($readPath !== $path) {
                 @unlink($readPath);
@@ -361,6 +381,59 @@ class TargetImporter
         $zip->close();
 
         return $copy;
+    }
+
+    /**
+     * Baris header: di antara 10 baris terisi pertama, baris pertama yang jumlah sel terisinya
+     * minimal separuh baris terlebar. Judul laporan (1 sel gabungan) jadi terlewati.
+     *
+     * @param  array<int, list<mixed>>  $rows
+     */
+    private function headerRowNumber(array $rows): ?int
+    {
+        $filled = array_map(
+            fn (array $values) => count(array_filter($values, fn ($value) => $value !== null && $value !== '')),
+            array_slice($rows, 0, 10, true),
+        );
+
+        if ($filled === []) {
+            return null;
+        }
+
+        $needed = max(2, (int) ceil(max($filled) / 2));
+
+        foreach ($filled as $number => $count) {
+            if ($count >= $needed) {
+                return $number;
+            }
+        }
+
+        return array_key_first($filled);
+    }
+
+    /**
+     * @param  list<mixed>  $values
+     */
+    private function isColumnNumberRow(array $values): bool
+    {
+        $filled = array_filter($values, fn ($value) => $value !== null && $value !== '');
+
+        return count($filled) >= 2 && array_filter($filled, fn ($value) => ! preg_match('/^\(\d+\)$/', (string) $value)) === [];
+    }
+
+    /**
+     * Teks sel ber-hyperlink: URL saja bila teksnya cuma "Link"/"Buka"/kosong,
+     * selain itu teks dibungkus <a> (pola yang sama dengan Excel berisi rumus HYPERLINK HTML).
+     */
+    private function hyperlinkValue(mixed $text, string $url): string
+    {
+        $label = trim((string) $text);
+
+        if ($label === '' || $label === $url || preg_match('/^(link|buka|klik( di ?sini)?|lihat|open|url)$/i', $label)) {
+            return $url;
+        }
+
+        return '<a href="'.htmlspecialchars($url, ENT_QUOTES).'">'.htmlspecialchars($label, ENT_QUOTES).'</a>';
     }
 
     /**

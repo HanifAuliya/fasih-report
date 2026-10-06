@@ -135,6 +135,41 @@ class ProjectSettingsTest extends TestCase
         $this->assertCount(3, TargetRow::sole()->cells);
     }
 
+    public function test_report_style_workbook_with_title_rows_and_hyperlinks_is_read_correctly(): void
+    {
+        $project = $this->createProject();
+        $project->update(['settings' => [...$project->settings, 'key_column' => 'Assignment ID', 'recap_column' => 'Nama Kecamatan']]);
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValues(['DATA MIKRO KASUS ANOMALI (PER ASSIGNMENT)']));
+        $writer->addRow(Row::fromValues(['Wilayah: Kabupaten/Kota 6307']));
+        $writer->addRow(Row::fromValues(['No', 'Nama Kecamatan', 'Assignment ID', 'Link Fasih']));
+        $writer->addRow(Row::fromValues(['(1)', '(2)', '(3)', '(4)']));
+        $writer->addRow(Row::fromValues(['1', 'HARUYAN', self::UUID_A, 'Link']));
+        $writer->addRow(Row::fromValues(['2', 'BARABAI', self::UUID_B, 'Link']));
+        $writer->close();
+
+        // Hyperlink Excel di sel D5 (teks "Link")
+        $zip = new \ZipArchive;
+        $zip->open($path);
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $sheet = str_replace('</sheetData>', '</sheetData><hyperlinks><hyperlink ref="D5" r:id="rIdLink1"/></hyperlinks>', $sheet);
+        $zip->addFromString('xl/worksheets/sheet1.xml', $sheet);
+        $zip->addFromString('xl/worksheets/_rels/sheet1.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLink1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_A.'" TargetMode="External"/></Relationships>');
+        $zip->close();
+
+        $this->upload($project, UploadedFile::fake()->createWithContent('Data_Mikro_Anomali_Gabungan_6307.xlsx', file_get_contents($path)));
+
+        $unit = $project->kecamatans()->sole();
+        $this->assertSame(['No', 'Nama Kecamatan', 'Assignment ID', 'Link Fasih'], $unit->targetSheets()->sole()->headers);
+        $this->assertSame(2, $unit->target, 'judul laporan & baris nomor kolom tidak ikut jadi data');
+        $this->assertSame([self::UUID_A, self::UUID_B], TargetRow::orderBy('row_number')->pluck('row_key')->all());
+        $this->assertSame([5, 6], TargetRow::orderBy('row_number')->pluck('row_number')->all(), 'nomor baris = nomor baris asli Excel');
+        $this->assertSame('https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_A, TargetRow::firstWhere('row_key', self::UUID_A)->cells[3]);
+    }
+
     public function test_csv_report_with_custom_statuses_updates_progress_and_recap(): void
     {
         $project = $this->createProject();

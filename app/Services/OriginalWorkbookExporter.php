@@ -6,8 +6,8 @@ use App\Models\Kecamatan;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
 use App\Support\StatusSet;
+use App\Support\XlsxPackage;
 use App\Support\XlsxStyleBook;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Throwable;
@@ -51,7 +51,7 @@ class OriginalWorkbookExporter
         }
 
         $statuses = $unit->project->config()->statuses();
-        $sheetPaths = $this->sheetPaths($zip);
+        $sheetPaths = XlsxPackage::sheetPaths($zip);
         $filterRanges = [];
         $stylesXml = $zip->getFromName('xl/styles.xml');
         $styleBook = $stylesXml !== false ? new XlsxStyleBook($stylesXml) : null;
@@ -154,7 +154,7 @@ class OriginalWorkbookExporter
         }, $xml) ?? throw new RuntimeException('Sheet terlalu besar untuk diproses: '.preg_last_error_msg());
 
         $lastColumn = $firstStatusColumn + count(self::STATUS_HEADERS) - 1;
-        $range = 'A'.max(1, $headerRow).':'.self::columnLetter($lastColumn).max($headerRow, (int) $rows->keys()->max());
+        $range = 'A'.max(1, $headerRow).':'.XlsxPackage::columnLetter($lastColumn).max($headerRow, (int) $rows->keys()->max());
 
         return [$this->withAutoFilter($this->widenDimension($xml, $lastColumn), $range), $range];
     }
@@ -241,7 +241,7 @@ class OriginalWorkbookExporter
                 return null;
             }
 
-            $cells[self::columnIndex($ref[1])] = $cell;
+            $cells[XlsxPackage::columnIndex($ref[1])] = $cell;
         }
 
         $baseColumn = collect(array_keys($cells))->filter(fn (int $column) => $column < $firstNewColumn)->max();
@@ -254,7 +254,7 @@ class OriginalWorkbookExporter
                 ? $newStyles[$column]
                 : (preg_match('/\ss="(\d+)"/', $existing, $s) ? (int) $s[1] : null);
             $style = $xf ? ' s="'.$xf.'"' : '';
-            $ref = self::columnLetter($column).$rowNumber;
+            $ref = XlsxPackage::columnLetter($column).$rowNumber;
 
             // Angka ditulis sebagai teks bila sel aslinya teks (mis. proses "1" -> "0")
             if (is_int($value) && preg_match('/\st="(s|str|inlineStr)"/', $existing)) {
@@ -284,63 +284,9 @@ class OriginalWorkbookExporter
     private function widenDimension(string $xml, int $lastColumn): string
     {
         return preg_replace_callback('/<dimension ref="([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?"/', function (array $match) use ($lastColumn) {
-            $endColumn = max(self::columnIndex($match[3] ?? $match[1]), $lastColumn);
+            $endColumn = max(XlsxPackage::columnIndex($match[3] ?? $match[1]), $lastColumn);
 
-            return '<dimension ref="'.$match[1].$match[2].':'.self::columnLetter($endColumn).($match[4] ?? $match[2]).'"';
+            return '<dimension ref="'.$match[1].$match[2].':'.XlsxPackage::columnLetter($endColumn).($match[4] ?? $match[2]).'"';
         }, $xml, 1);
-    }
-
-    /**
-     * Nama sheet => path XML-nya di dalam file (lewat workbook.xml & relasinya).
-     *
-     * @return array<string, string>
-     */
-    private function sheetPaths(ZipArchive $zip): array
-    {
-        $workbook = (string) $zip->getFromName('xl/workbook.xml');
-        $rels = (string) $zip->getFromName('xl/_rels/workbook.xml.rels');
-
-        $targets = Collection::make();
-        preg_match_all('/<Relationship\b[^>]*>/', $rels, $relationships);
-
-        foreach ($relationships[0] as $relationship) {
-            if (preg_match('/\bId="([^"]+)"/', $relationship, $id) && preg_match('/\bTarget="([^"]+)"/', $relationship, $target)) {
-                $file = ltrim($target[1], '/');
-                $targets[$id[1]] = str_starts_with($file, 'xl/') ? $file : 'xl/'.$file;
-            }
-        }
-
-        $paths = [];
-        preg_match_all('/<sheet\b[^>]*>/', $workbook, $sheets);
-
-        foreach ($sheets[0] as $sheet) {
-            if (preg_match('/\bname="([^"]+)"/', $sheet, $name) && preg_match('/\br:id="([^"]+)"/', $sheet, $id) && $targets->has($id[1])) {
-                $paths[html_entity_decode($name[1], ENT_XML1 | ENT_QUOTES, 'UTF-8')] = $targets[$id[1]];
-            }
-        }
-
-        return $paths;
-    }
-
-    public static function columnLetter(int $index): string
-    {
-        $letter = '';
-
-        for ($index++; $index > 0; $index = intdiv($index - 1, 26)) {
-            $letter = chr(65 + ($index - 1) % 26).$letter;
-        }
-
-        return $letter;
-    }
-
-    public static function columnIndex(string $letters): int
-    {
-        $index = 0;
-
-        foreach (str_split($letters) as $letter) {
-            $index = $index * 26 + (ord($letter) - 64);
-        }
-
-        return $index - 1;
     }
 }
