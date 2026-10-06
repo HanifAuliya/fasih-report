@@ -153,11 +153,10 @@ Alpine.data('copyButton', () => ({
 }));
 
 // Blok kode dengan syntax highlight + tombol copy
-// Tooltip grafik progress: segmen bar (hover/fokus) dan crosshair grafik garis.
+// Tooltip grafik hasil: segmen/bar (hover & fokus keyboard).
 // Isi tooltip dipasang lewat x-text (bukan innerHTML) karena nama unit berasal dari data.
 Alpine.data('chartTip', () => ({
     tip: null,
-    cursor: null,
     show(event, title, rows) {
         const rect = event.target.getBoundingClientRect();
         this.tip = { title, rows, x: event.clientX ?? rect.right, y: event.clientY ?? rect.top };
@@ -170,21 +169,6 @@ Alpine.data('chartTip', () => ({
     },
     hide() {
         this.tip = null;
-    },
-    trend(event, svg) {
-        // Dibaca ulang setiap kali: data titik ikut berubah saat Livewire merender ulang
-        const points = JSON.parse(svg.dataset.points);
-        const rect = svg.getBoundingClientRect();
-        const x = ((event.clientX - rect.left) / rect.width) * svg.viewBox.baseVal.width;
-        const point = points.reduce((best, p) => (Math.abs(p.x - x) < Math.abs(best.x - x) ? p : best));
-
-        this.cursor = point;
-        this.tip = {
-            title: point.label,
-            rows: [['baris selesai', point.total], ['hari itu', `+${point.added}`]],
-            x: event.clientX,
-            y: event.clientY,
-        };
     },
 }));
 

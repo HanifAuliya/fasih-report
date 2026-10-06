@@ -7,7 +7,6 @@ use App\Models\Project;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
 use App\Services\ReportFileProcessor;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
@@ -207,7 +206,6 @@ class KecamatanTable extends Component
             'kecamatans' => $kecamatans,
             'statusCounts' => $statusCounts,
             'changedRowsCount' => TargetRow::where('project_id', $this->project->id)->whereNotNull('status_file_id')->count(),
-            'doneTrend' => $this->doneTrend(),
             'allUnits' => $all,
             'overallCounts' => $statusCounts->reduce(
                 fn ($totals, $counts) => $counts->reduce(fn ($totals, $total, $status) => $totals->put($status, $totals->get($status, 0) + $total), $totals),
@@ -218,41 +216,6 @@ class KecamatanTable extends Component
             'totalRealisasi' => $all->sum('realisasi'),
             'kecamatanRecap' => $this->project->config()->recapColumn() ? $this->kecamatanRecap() : collect(),
         ]);
-    }
-
-    /**
-     * Jumlah baris selesai (kumulatif) per hari menurut waktu status, untuk grafik perkembangan.
-     * Baris yang sudah selesai sejak Excel awal (tanpa waktu status) jadi titik awal.
-     *
-     * @return list<array{date: string, label: string, added: int, total: int}>
-     */
-    private function doneTrend(): array
-    {
-        $doneRows = fn () => TargetRow::where('project_id', $this->project->id)
-            ->tracked()
-            ->whereIn('status', $this->project->config()->statuses()->doneCodes());
-
-        $total = $doneRows()->whereNull('status_at')->count();
-        $daily = $doneRows()
-            ->whereNotNull('status_at')
-            ->selectRaw('DATE(status_at) as day, count(*) as total')
-            ->groupBy('day')
-            ->orderBy('day')
-            ->pluck('total', 'day');
-
-        $points = [];
-
-        foreach ($daily as $day => $added) {
-            $total += (int) $added;
-            $points[] = [
-                'date' => (string) $day,
-                'label' => Carbon::parse($day)->translatedFormat('j M'),
-                'added' => (int) $added,
-                'total' => $total,
-            ];
-        }
-
-        return array_slice($points, -60);
     }
 
     /**
