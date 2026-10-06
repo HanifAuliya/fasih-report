@@ -24,6 +24,11 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
+            @if ($overallCounts->sum() > 0)
+                <a href="{{ route('projects.combined.export', $project) }}" class="btn-secondary" title="Satu file Excel berisi data semua {{ strtolower($unitLabel) }} beserta status terbarunya">
+                    <x-icon name="download" class="size-4" /> Excel gabungan
+                </a>
+            @endif
             @if ($changedRowsCount > 0)
                 <a href="{{ route('projects.changes.export', $project) }}" class="btn-secondary" title="Semua baris dari seluruh {{ strtolower($unitLabel) }} yang statusnya diubah oleh laporan JSON">
                     <x-icon name="download" class="size-4" /> Rekap perubahan JSON

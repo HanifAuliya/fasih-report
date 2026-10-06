@@ -502,6 +502,32 @@ class TargetDataTest extends TestCase
         $this->assertSame('closed', $row->refresh()->status);
     }
 
+    public function test_combined_export_merges_all_units_into_one_workbook(): void
+    {
+        $this->upload($this->targetWorkbook(), $this->targetWorkbook('target_OSS_020_BATU_BENAWA.xlsx'));
+        $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'linked']]));
+
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])->assertSee('Excel gabungan');
+
+        auth()->logout();
+        $response = $this->get(route('projects.combined.export', $this->project()))->assertOk();
+        $sheets = collect(app(TargetImporter::class)->readWorkbook($response->getFile()->getPathname()))->keyBy('name');
+        $statuses = $this->project()->config()->statuses();
+
+        $this->assertSame(['Pindah', 'Sudah_di_SLS_sama'], $sheets->keys()->all());
+
+        $pindah = $sheets['Pindah'];
+        $this->assertSame(['Kode Kecamatan', 'Kecamatan', 'Baris', ...self::HEADERS, 'status_web', 'keterangan_web', 'waktu_status_web'], $pindah['headers']);
+        $this->assertCount(6, $pindah['rows'], '3 baris x 2 kecamatan');
+
+        $rows = collect($pindah['rows'])->values();
+        $this->assertSame(['010', 'HARUYAN', 2], array_slice($rows[0], 0, 3));
+        $this->assertSame($statuses->label('linked'), $rows[0][10]);
+        $this->assertSame('0', $rows[0][3], 'proses=0 untuk baris selesai');
+        $this->assertSame('020', $rows[3][0]);
+        $this->assertCount(2, $sheets['Sudah_di_SLS_sama']['rows']);
+    }
+
     public function test_changes_export_lists_only_rows_updated_by_json_reports(): void
     {
         $this->upload($this->targetWorkbook());

@@ -5,6 +5,7 @@ use App\Http\Controllers\DeployPackageController;
 use App\Http\Controllers\DeployStatusController;
 use App\Http\Controllers\GithubWebhookController;
 use App\Http\Controllers\ProjectChangesExportController;
+use App\Http\Controllers\ProjectCombinedExportController;
 use App\Http\Controllers\RawScriptController;
 use App\Http\Controllers\ReportFileController;
 use App\Http\Controllers\TargetExportController;
@@ -60,6 +61,7 @@ Route::livewire('/data/{project}/kecamatan/{kode}', KecamatanData::class)->name(
 Route::get('/data/{project}/kecamatan/{kode}/excel', TargetExportController::class)->name('projects.kecamatan.export');
 Route::get('/data/{project}/kecamatan/{kode}/json', UnitStatusJsonController::class)->name('projects.kecamatan.json');
 Route::get('/data/{project}/rekap-perubahan', ProjectChangesExportController::class)->name('projects.changes.export');
+Route::get('/data/{project}/excel-gabungan', ProjectCombinedExportController::class)->name('projects.combined.export');
 
 Route::get('/files/{file}/download', [ReportFileController::class, 'download'])->name('files.download');
 Route::get('/files/{file}/view', [ReportFileController::class, 'view'])->name('files.view');
