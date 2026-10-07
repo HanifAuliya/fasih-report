@@ -480,6 +480,7 @@ class TargetDataTest extends TestCase
     public function test_current_status_json_includes_manual_changes_and_can_be_reuploaded(): void
     {
         $this->upload($this->targetWorkbook());
+        $this->uploadReport($this->jsonReport([['id' => 'ccc-3', 'status' => 'red', 'namaUsaha' => 'WARUNG C', 'kelAnggota' => 'BUDI']]));
         $row = TargetRow::firstWhere('row_key', 'aaa-1');
 
         Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
@@ -494,6 +495,8 @@ class TargetDataTest extends TestCase
         $this->assertSame('closed', $queue['aaa-1']['status']);
         $this->assertSame('moved', $queue['bbb-2']['status']);
         $this->assertSame(2, $queue['aaa-1']['row']);
+        $this->assertSame('WARUNG A', $queue['aaa-1']['excel']['nama_usaha'], 'isi baris Excel ikut');
+        $this->assertSame('BUDI', $queue['ccc-3']['kelAnggota'], 'field asli laporan script ikut');
 
         // Upload ulang JSON terkini: status sama persis
         $this->actingAs(User::first());

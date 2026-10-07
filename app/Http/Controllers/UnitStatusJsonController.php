@@ -19,19 +19,29 @@ class UnitStatusJsonController extends Controller
 
         $queue = TargetRow::where('kecamatan_id', $unit->id)
             ->tracked()
-            ->with('sheet:id,name')
+            ->with('sheet:id,name,headers')
             ->orderBy('target_sheet_id')
             ->orderBy('row_number')
             ->get()
-            ->map(fn (TargetRow $row) => [
-                'id' => $row->row_key,
-                'sheet' => $row->sheet?->name,
-                'row' => $row->row_number,
-                'status' => $row->status,
-                'status_label' => $statuses->label($row->status),
-                'reason' => $row->reason,
-                'doneAt' => $row->status_at?->toIso8601String(),
-            ]);
+            ->map(function (TargetRow $row) use ($statuses) {
+                $status = [
+                    'id' => $row->row_key,
+                    'sheet' => $row->sheet?->name,
+                    'row' => $row->row_number,
+                    'status' => $row->status,
+                    'status_label' => $statuses->label($row->status),
+                    'reason' => $row->reason,
+                    'doneAt' => $row->status_at?->toIso8601String(),
+                ];
+
+                return [
+                    ...$status,
+                    // Field asli dari laporan script (mis. namaUsaha, kelAnggota, linkOss)
+                    ...array_diff_key($row->result ?? [], $status),
+                    // Isi baris Excel lengkap dengan nama kolomnya
+                    'excel' => $this->excelRow($row),
+                ];
+            });
 
         $json = json_encode([
             'v' => 1,
@@ -47,5 +57,19 @@ class UnitStatusJsonController extends Controller
             'Content-Type' => 'application/json; charset=utf-8',
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
+    }
+
+    /**
+     * @return array<string, mixed> nama kolom Excel => isi sel
+     */
+    private function excelRow(TargetRow $row): array
+    {
+        $values = [];
+
+        foreach ($row->sheet?->headers ?? [] as $index => $header) {
+            $values[(string) $header] ??= $row->cells[$index] ?? null;
+        }
+
+        return $values;
     }
 }
