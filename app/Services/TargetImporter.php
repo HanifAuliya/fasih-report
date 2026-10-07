@@ -58,6 +58,7 @@ class TargetImporter
                 ]);
 
                 $keyColumn = $settings->keyColumn() !== null ? $targetSheet->columnIndex($settings->keyColumn()) : null;
+                $taskColumn = $settings->taskColumn() !== null ? $targetSheet->columnIndex($settings->taskColumn()) : null;
                 $targetSheet->tracked = count($sheet['rows']) > 0
                     && ($settings->keyMode() === ProjectSettings::KEY_ROW || $keyColumn !== null);
                 $targetSheet->save();
@@ -67,6 +68,8 @@ class TargetImporter
                 foreach ($sheet['rows'] as $rowNumber => $cells) {
                     $rowKey = match (true) {
                         ! $targetSheet->tracked => null,
+                        // Bukan baris yang perlu dikerjakan (mis. Edit KBLI ≠ 1): tampil, tidak dihitung
+                        $taskColumn !== null && ! $settings->isTaskValue($cells[$taskColumn] ?? null) => null,
                         $settings->keyMode() === ProjectSettings::KEY_ROW => self::sheetRowKey($sheet['name'], $rowNumber),
                         default => self::normalizeKey($cells[$keyColumn] ?? null),
                     };
@@ -134,22 +137,27 @@ class TargetImporter
 
         foreach ($kecamatan->targetSheets()->get() as $sheet) {
             $keyColumn = $settings->keyColumn() !== null ? $sheet->columnIndex($settings->keyColumn()) : null;
+            $taskColumn = $settings->taskColumn() !== null ? $sheet->columnIndex($settings->taskColumn()) : null;
             $sheet->update([
                 'tracked' => $sheet->row_count > 0 && ($settings->keyMode() === ProjectSettings::KEY_ROW || $keyColumn !== null),
             ]);
 
             TargetRow::where('target_sheet_id', $sheet->id)
                 ->select(['id', 'row_number', 'row_key', 'cells'])
-                ->chunkById(500, function ($rows) use ($sheet, $settings, $keyColumn, &$changed) {
+                ->chunkById(500, function ($rows) use ($sheet, $settings, $keyColumn, $taskColumn, &$changed) {
                     foreach ($rows as $row) {
                         $rowKey = match (true) {
                             ! $sheet->tracked => null,
+                            $taskColumn !== null && ! $settings->isTaskValue($row->cells[$taskColumn] ?? null) => null,
                             $settings->keyMode() === ProjectSettings::KEY_ROW => self::sheetRowKey($sheet->name, $row->row_number),
                             default => self::normalizeKey($row->cells[$keyColumn] ?? null),
                         };
 
                         if ($rowKey !== $row->row_key) {
-                            TargetRow::whereKey($row->id)->update(['row_key' => $rowKey]);
+                            // Baris yang tidak lagi dilacak tidak membawa status lama
+                            TargetRow::whereKey($row->id)->update($rowKey === null
+                                ? ['row_key' => null, 'status' => null, 'reason' => null, 'status_at' => null, 'status_file_id' => null]
+                                : ['row_key' => $rowKey]);
                             $changed++;
                         }
                     }

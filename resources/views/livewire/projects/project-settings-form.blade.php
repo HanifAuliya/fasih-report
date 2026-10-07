@@ -96,6 +96,19 @@
                 <p class="mt-1 text-[11px] text-slate-400">Isinya dicocokkan ke alias status, mis. "dipindah" atau "KUNING: …".</p>
             </div>
 
+            <div>
+                <label class="label">Kolom penanda baris yang dikerjakan (opsional)</label>
+                <input wire:model="taskColumn" type="text" list="header-options" class="input font-mono" placeholder="Edit KBLI (1=Ya)">
+                <p class="mt-1 text-[11px] text-slate-400">Diisi → hanya baris yang nilainya cocok yang jadi target & dihitung progress. Baris lain tetap tampil.</p>
+            </div>
+
+            <div>
+                <label class="label">Nilai yang berarti "dikerjakan"</label>
+                <input wire:model="taskValues" type="text" class="input font-mono" placeholder="1, ya, true">
+                <p class="mt-1 text-[11px] text-slate-400">Pisahkan dengan koma; huruf besar/kecil tidak dibedakan.</p>
+                @error('taskValues') <p class="mt-1.5 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
             <div class="md:col-span-2">
                 <label class="label">Kolom yang tampil di mode Ringkas</label>
                 <textarea wire:model="displayColumns" rows="2" class="input font-mono text-xs" placeholder="nama_usaha, kec, desa, link"></textarea>

@@ -27,6 +27,8 @@ class ProjectSettings
         'report_key_fields' => ['assignment_id', 'id'],
         'recap_column' => null,
         'initial_status_column' => null,
+        'task_column' => null,
+        'task_values' => ['1', 'ya', 'true'],
         'display_columns' => [],
         'statuses' => [],
     ];
@@ -80,6 +82,33 @@ class ProjectSettings
     public function initialStatusColumn(): ?string
     {
         return self::blankToNull($this->settings['initial_status_column']);
+    }
+
+    /**
+     * Kolom penanda baris yang perlu dikerjakan (mis. "Edit KBLI (1=Ya)"): bila diisi, hanya baris
+     * yang nilainya ada di taskValues() yang jadi target & dihitung progress-nya.
+     */
+    public function taskColumn(): ?string
+    {
+        return self::blankToNull($this->settings['task_column'] ?? null);
+    }
+
+    /**
+     * @return list<string> nilai (huruf kecil) yang berarti "dikerjakan"
+     */
+    public function taskValues(): array
+    {
+        return array_map('strtolower', self::toList($this->settings['task_values'] ?? self::DEFAULTS['task_values']));
+    }
+
+    /**
+     * Apakah baris dengan isi kolom penanda ini termasuk yang dikerjakan.
+     */
+    public function isTaskValue(mixed $value): bool
+    {
+        $value = strtolower(trim(is_bool($value) ? ($value ? 'true' : 'false') : (string) $value));
+
+        return in_array($value, $this->taskValues(), true);
     }
 
     /**

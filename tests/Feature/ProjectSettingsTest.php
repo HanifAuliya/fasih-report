@@ -170,6 +170,48 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame('https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_A, TargetRow::firstWhere('row_key', self::UUID_A)->cells[3]);
     }
 
+    public function test_only_rows_marked_for_work_are_targets(): void
+    {
+        $project = $this->createProject();
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project])
+            ->set('taskColumn', 'Edit KBLI (1=Ya)')
+            ->set('taskValues', '1, ya')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $link = fn (string $uuid) => '<a href="https://fasih-sm.bps.go.id/app/assignment/x/'.$uuid.'">Link</a>';
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValues(['kec', 'nama_usaha', 'kbli_akhir', 'Edit KBLI (1=Ya)', 'KBLI Baru', 'link']));
+        $writer->addRow(Row::fromValues(['HARUYAN', 'UTP HORTIKULTURA', '01114', '1', '01133', $link(self::UUID_A)]));
+        $writer->addRow(Row::fromValues(['HARUYAN', 'WARUNG', '47111', '0', '', $link(self::UUID_B)]));
+        $writer->addRow(Row::fromValues(['BARABAI', 'PENGGALIAN BATU', '08101', 1, '35302', $link(self::UUID_C)]));
+        $writer->close();
+
+        $this->upload($project->refresh(), UploadedFile::fake()->createWithContent('Bagian 1 Pengecekan KBLI.xlsx', file_get_contents($path)));
+
+        $unit = $project->kecamatans()->sole();
+        $this->assertSame('BAGIAN 01', $unit->nama);
+        $this->assertSame(2, $unit->target, 'baris Edit KBLI = 0 tidak jadi target');
+        $this->assertSame(3, TargetRow::count(), 'semua baris tetap tersimpan & tampil');
+        $this->assertNull(TargetRow::where('row_number', 3)->value('row_key'));
+
+        // Laporan untuk baris yang bukan target tidak dihitung
+        $this->uploadReport($project, UploadedFile::fake()->createWithContent('laporan.json', json_encode(['queue' => [
+            ['id' => self::UUID_A, 'status' => 'done'],
+            ['id' => self::UUID_B, 'status' => 'done'],
+        ]])));
+        $this->assertSame(1, $unit->refresh()->realisasi);
+
+        // Penanda dikosongkan: semua baris jadi target lagi
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project->refresh()])
+            ->set('taskColumn', '')
+            ->call('save')
+            ->assertHasNoErrors();
+        $this->assertSame(3, $unit->refresh()->target);
+    }
+
     public function test_csv_report_with_custom_statuses_updates_progress_and_recap(): void
     {
         $project = $this->createProject();

@@ -34,6 +34,10 @@ class ProjectSettingsForm extends Component
 
     public string $initialStatusColumn = '';
 
+    public string $taskColumn = '';
+
+    public string $taskValues = '';
+
     public string $displayColumns = '';
 
     /** @var list<array{code: string, label: string, color: string, done: bool, aliases: string}> */
@@ -63,6 +67,8 @@ class ProjectSettingsForm extends Component
         $this->reportKeyFields = implode(', ', $config->reportKeyFields());
         $this->recapColumn = (string) $config->recapColumn();
         $this->initialStatusColumn = (string) $config->initialStatusColumn();
+        $this->taskColumn = (string) $config->taskColumn();
+        $this->taskValues = implode(', ', $config->taskValues());
         $this->displayColumns = implode(', ', $config->displayColumns());
         $this->statuses = $config->statuses()->all()
             ->map(fn (array $status) => [...$status, 'aliases' => implode(', ', $status['aliases'])])
@@ -111,6 +117,8 @@ class ProjectSettingsForm extends Component
             'reportKeyFields' => [Rule::requiredIf($this->keyMode === ProjectSettings::KEY_COLUMN), 'nullable', 'string', 'max:300'],
             'recapColumn' => ['nullable', 'string', 'max:100'],
             'initialStatusColumn' => ['nullable', 'string', 'max:100'],
+            'taskColumn' => ['nullable', 'string', 'max:100'],
+            'taskValues' => [Rule::requiredIf($this->taskColumn !== ''), 'nullable', 'string', 'max:200'],
             'displayColumns' => ['nullable', 'string', 'max:2000'],
             'statuses' => ['required', 'array', 'min:1'],
             'statuses.*.code' => ['required', 'string', 'max:20', 'regex:/^[a-z0-9_-]+$/i', 'distinct:ignore_case'],
@@ -135,6 +143,8 @@ class ProjectSettingsForm extends Component
             'report_key_fields' => ProjectSettings::toList($this->reportKeyFields),
             'recap_column' => $this->recapColumn,
             'initial_status_column' => $this->initialStatusColumn,
+            'task_column' => $this->taskColumn,
+            'task_values' => ProjectSettings::toList($this->taskValues),
             'display_columns' => ProjectSettings::toList($this->displayColumns),
             'statuses' => $this->statuses,
         ]))->toArray()]);
@@ -164,6 +174,8 @@ class ProjectSettingsForm extends Component
             'key_column' => $config->keyColumn(),
             'report_key_fields' => $config->reportKeyFields(),
             'initial_status_column' => $config->initialStatusColumn(),
+            'task_column' => $config->taskColumn(),
+            'task_values' => $config->taskValues(),
             'statuses' => $config->statuses()->toArray(),
         ];
     }
