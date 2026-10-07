@@ -94,6 +94,14 @@ class Project extends Model
         return $this->hasMany(Script::class)->orderBy('name');
     }
 
+    /**
+     * Baris file induk (Excel utuh); status diambil dari baris unit yang kuncinya sama.
+     */
+    public function masterRows(): HasMany
+    {
+        return $this->hasMany(MasterRow::class);
+    }
+
     public function files(): HasMany
     {
         return $this->hasMany(ReportFile::class)->latest();

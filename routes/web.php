@@ -4,6 +4,7 @@ use App\Http\Controllers\DeployController;
 use App\Http\Controllers\DeployPackageController;
 use App\Http\Controllers\DeployStatusController;
 use App\Http\Controllers\GithubWebhookController;
+use App\Http\Controllers\MasterExportController;
 use App\Http\Controllers\ProjectChangesExportController;
 use App\Http\Controllers\ProjectCombinedExportController;
 use App\Http\Controllers\RawScriptController;
@@ -62,6 +63,7 @@ Route::get('/data/{project}/kecamatan/{kode}/excel', TargetExportController::cla
 Route::get('/data/{project}/kecamatan/{kode}/json', UnitStatusJsonController::class)->name('projects.kecamatan.json');
 Route::get('/data/{project}/rekap-perubahan', ProjectChangesExportController::class)->name('projects.changes.export');
 Route::get('/data/{project}/excel-gabungan', ProjectCombinedExportController::class)->name('projects.combined.export');
+Route::get('/data/{project}/excel-induk', MasterExportController::class)->name('projects.master.export');
 
 Route::get('/files/{file}/download', [ReportFileController::class, 'download'])->name('files.download');
 Route::get('/files/{file}/view', [ReportFileController::class, 'view'])->name('files.view');

@@ -7,13 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['project_id', 'kecamatan_id', 'category', 'original_name', 'path', 'extension', 'size', 'notes', 'summary', 'is_active', 'uploaded_by'])]
+#[Fillable(['project_id', 'kecamatan_id', 'category', 'original_name', 'path', 'extension', 'size', 'notes', 'summary', 'header_row', 'is_active', 'uploaded_by'])]
 class ReportFile extends Model
 {
     public const CATEGORIES = [
         'report' => 'Report',
         'target' => 'Target',
         'bagian' => 'Pembagian',
+        'induk' => 'File induk',
         'lainnya' => 'Lainnya',
     ];
 

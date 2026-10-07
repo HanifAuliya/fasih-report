@@ -56,6 +56,7 @@ class ReportFileProcessor
     {
         try {
             $summary = match (true) {
+                $file->category === 'induk' && $file->extension === 'xlsx' => app(MasterWorkbook::class)->import($file),
                 $this->isTargetWorkbook($file) => $this->importTarget($file),
                 $this->isStatusReport($file) => $this->unitReports->activate($file),
                 default => null,

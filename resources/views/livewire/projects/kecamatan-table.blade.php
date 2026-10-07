@@ -51,6 +51,8 @@
         </div>
     </div>
 
+    <livewire:projects.master-workbook-panel :project="$project" wire:key="master-{{ $project->id }}" />
+
     {{-- Ringkasan keseluruhan: semua baris dari semua unit --}}
     @php
         $overallTotal = $overallCounts->sum();
