@@ -21,7 +21,7 @@
     {{-- Menu utama --}}
     <div class="space-y-0.5">
         @foreach ([['dashboard', 'dashboard', 'home', 'Dashboard'], ['projects', 'projects.index', 'grid', 'Daftar pekerjaan']] as [$key, $route, $icon, $label])
-            <a href="{{ route($route) }}" wire:navigate title="{{ $label }}"
+            <a href="{{ route($route) }}" wire:navigate.hover title="{{ $label }}"
                 class="flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition {{ $item($section === $key) }} lg:sb-collapsed:justify-center lg:sb-collapsed:px-0">
                 <x-icon :name="$icon" class="size-[1.05rem] shrink-0 text-slate-400" />
                 <span class="truncate lg:sb-collapsed:hidden">{{ $label }}</span>
@@ -34,7 +34,7 @@
         <div class="flex h-7 items-center justify-between px-2.5 lg:sb-collapsed:hidden">
             <p class="eyebrow">Pekerjaan</p>
             @can('manage')
-                <a href="{{ route('projects.index') }}" wire:navigate class="flex size-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" title="Kelola / tambah pekerjaan">
+                <a href="{{ route('projects.index') }}" wire:navigate.hover class="flex size-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" title="Kelola / tambah pekerjaan">
                     <x-icon name="plus" class="size-3.5" />
                 </a>
             @endcan
@@ -49,7 +49,7 @@
                 @endphp
 
                 <div wire:key="nav-project-{{ $project->id }}">
-                    <a href="{{ route('projects.show', $project) }}" wire:navigate title="{{ $project->name }}"
+                    <a href="{{ route('projects.show', $project) }}" wire:navigate.hover title="{{ $project->name }}"
                             class="flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition {{ $item($isActive && ! $activeKode) }} {{ $isActive && $activeKode ? 'font-semibold !text-slate-900' : '' }} lg:sb-collapsed:justify-center lg:sb-collapsed:px-0">
                             <span class="flex size-5 shrink-0 items-center justify-center rounded-md text-[9px] font-bold uppercase {{ $avatar[$project->color] ?? $avatar['indigo'] }}">{{ $initials($project->name) }}</span>
                             <span class="truncate lg:sb-collapsed:hidden">{{ $project->name }}</span>
@@ -61,7 +61,7 @@
                             <div class="relative mt-0.5 mb-1.5 ml-[1.25rem] space-y-px border-l border-slate-200 pl-2">
                                 @foreach ($units as $unit)
                                     @php $unitActive = $isActive && $activeKode === $unit->kode; @endphp
-                                    <a href="{{ route('projects.kecamatan', [$project, $unit->kode]) }}" wire:navigate wire:key="nav-unit-{{ $unit->id }}"
+                                    <a href="{{ route('projects.kecamatan', [$project, $unit->kode]) }}" wire:navigate.hover wire:key="nav-unit-{{ $unit->id }}"
                                         title="Buka data {{ $unit->nama }}"
                                         @class([
                                             'relative flex h-8 items-center gap-2 rounded-lg px-2 text-[12.5px] transition',

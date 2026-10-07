@@ -14,6 +14,7 @@
 </head>
 
 <body class="min-h-screen bg-(--page) font-sans text-slate-800 antialiased">
+    <x-icon-sprite />
     <div class="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {{-- Panel identitas --}}
         <aside class="relative hidden overflow-hidden bg-brand-600 p-12 text-white lg:flex lg:flex-col">

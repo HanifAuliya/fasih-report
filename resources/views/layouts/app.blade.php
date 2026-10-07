@@ -24,6 +24,7 @@
         },
     }"
     x-on:keydown.window.prevent.ctrl.b="toggleCollapsed()">
+    <x-icon-sprite />
 
     {{-- Overlay sidebar mobile --}}
     <div x-show="sidebar" x-transition.opacity x-cloak class="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px] lg:hidden" @click="sidebar = false"></div>

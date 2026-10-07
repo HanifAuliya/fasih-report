@@ -1,23 +1,7 @@
 import { Livewire, Alpine } from '../../vendor/livewire/livewire/dist/livewire.esm';
-import hljs from 'highlight.js/lib/core';
-import javascript from 'highlight.js/lib/languages/javascript';
-import json from 'highlight.js/lib/languages/json';
-import php from 'highlight.js/lib/languages/php';
-import python from 'highlight.js/lib/languages/python';
-import sql from 'highlight.js/lib/languages/sql';
-import bash from 'highlight.js/lib/languages/bash';
-import plaintext from 'highlight.js/lib/languages/plaintext';
-import 'highlight.js/styles/github-dark.css';
-import Swal from 'sweetalert2';
-import 'sweetalert2/dist/sweetalert2.min.css';
 
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('php', php);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('sql', sql);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('plaintext', plaintext);
+// highlight.js (+ tema) hanya diunduh di halaman yang menampilkan kode / preview teks
+const loadHighlighter = () => import('./highlight.js').then((module) => module.default);
 
 /**
  * Salin teks ke clipboard. navigator.clipboard hanya ada di https/localhost,
@@ -49,8 +33,12 @@ const swalBase = () => ({
 /**
  * Notifikasi kecil di pojok kanan bawah (SweetAlert2 toast).
  */
+// SweetAlert2 (+ CSS) dipisah dari bundel utama; diunduh saat browser senggang setelah halaman tampil
+const loadSwal = () => import('./swal.js').then((module) => module.default);
+(window.requestIdleCallback ?? ((callback) => setTimeout(callback, 1500)))(() => loadSwal());
+
 function toast(message, type = 'success') {
-    Swal.fire({
+    loadSwal().then((Swal) => Swal.fire({
         ...swalBase(),
         toast: true,
         position: 'bottom-end',
@@ -60,14 +48,14 @@ function toast(message, type = 'success') {
         timer: type === 'error' ? 6000 : 3000,
         timerProgressBar: true,
         customClass: { popup: 'swal-toast-app' },
-    });
+    }));
 }
 
 /**
  * Dialog konfirmasi. Dipakai di Blade: x-on:click="$confirm('Hapus?', () => $wire.delete(1), { danger: true })"
  */
 function confirmDialog(text, onConfirm, options = {}) {
-    return Swal.fire({
+    return loadSwal().then((Swal) => Swal.fire({
         ...swalBase(),
         title: options.title ?? 'Yakin?',
         text,
@@ -82,7 +70,7 @@ function confirmDialog(text, onConfirm, options = {}) {
             confirmButton: options.danger ? 'btn-danger' : 'btn-primary',
             cancelButton: 'btn-secondary',
         },
-    }).then((result) => {
+    })).then((result) => {
         if (result.isConfirmed) {
             onConfirm();
         }
@@ -188,8 +176,10 @@ Alpine.data('codeBlock', ({ truncated = false, load = null } = {}) => ({
         const el = this.$refs.code;
 
         if (el && el.tagName === 'CODE' && el.textContent.length <= HIGHLIGHT_LIMIT) {
-            delete el.dataset.highlighted;
-            hljs.highlightElement(el);
+            loadHighlighter().then((hljs) => {
+                delete el.dataset.highlighted;
+                hljs.highlightElement(el);
+            });
         }
     },
     async text() {
@@ -255,8 +245,9 @@ Alpine.data('filePreview', (url, extension) => ({
                 }
                 this.text = text;
                 this.kind = 'text';
-                this.$nextTick(() => {
+                this.$nextTick(async () => {
                     const lang = extension === 'json' ? 'json' : extension === 'js' ? 'javascript' : 'plaintext';
+                    const hljs = await loadHighlighter();
                     this.$refs.text.innerHTML = hljs.highlight(text, { language: lang }).value;
                 });
             }
