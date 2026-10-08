@@ -499,6 +499,11 @@ class TargetDataTest extends TestCase
         $this->assertSame('WARUNG A', $queue['aaa-1']['excel']['nama_usaha'], 'isi baris Excel ikut');
         $this->assertSame('BUDI', $queue['ccc-3']['kelAnggota'], 'field asli laporan script ikut');
 
+        // JSON gabungan semua unit pekerjaan
+        $all = collect(json_decode($this->get(route('projects.json', $this->project()))->assertOk()->getContent(), true)['queue'])->keyBy('id');
+        $this->assertSame('HARUYAN', $all['aaa-1']['unit']);
+        $this->assertSame('closed', $all['aaa-1']['status']);
+
         // Upload ulang JSON terkini: status sama persis
         $this->actingAs(User::first());
         $row->update(['status' => 'pending']);
@@ -536,14 +541,14 @@ class TargetDataTest extends TestCase
     {
         $this->upload($this->targetWorkbook());
 
-        Livewire::test(KecamatanTable::class, ['project' => $this->project()])->assertDontSee('Rekap perubahan JSON');
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])->assertDontSee('Excel rekap perubahan');
 
         $this->uploadReport($this->jsonReport([
             ['assignment_id' => 'AAA-1', 'status' => 'linked', 'reason' => 'ditautkan', 'doneAt' => '2026-10-04T08:00:00Z'],
             ['assignment_id' => 'ccc-3', 'status' => 'red', 'reason' => 'gagal kirim', 'doneAt' => '2026-10-04T08:05:00Z'],
         ]));
 
-        Livewire::test(KecamatanTable::class, ['project' => $this->project()])->assertSee('Rekap perubahan JSON');
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])->assertSee('Excel rekap perubahan');
 
         auth()->logout();
         $response = $this->get(route('projects.changes.export', $this->project()))->assertOk();

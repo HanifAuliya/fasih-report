@@ -12,20 +12,24 @@ use Illuminate\Http\Response;
  */
 class UnitStatusJsonController extends Controller
 {
-    public function __invoke(Project $project, string $kode): Response
+    public function __invoke(Project $project, ?string $kode = null): Response
     {
-        $unit = $project->kecamatans()->where('kode', $kode)->firstOrFail();
+        // Tanpa kode: gabungan semua unit pekerjaan ini
+        $unit = $kode !== null ? $project->kecamatans()->where('kode', $kode)->firstOrFail() : null;
         $statuses = $project->config()->statuses();
 
-        $queue = TargetRow::where('kecamatan_id', $unit->id)
+        $queue = TargetRow::query()
+            ->when($unit, fn ($query) => $query->where('kecamatan_id', $unit->id), fn ($query) => $query->where('project_id', $project->id))
             ->tracked()
-            ->with('sheet:id,name,headers')
+            ->with(['sheet:id,name,headers', 'kecamatan:id,kode,nama'])
+            ->orderBy('kecamatan_id')
             ->orderBy('target_sheet_id')
             ->orderBy('row_number')
             ->get()
             ->map(function (TargetRow $row) use ($statuses) {
                 $status = [
                     'id' => $row->row_key,
+                    'unit' => $row->kecamatan?->nama,
                     'sheet' => $row->sheet?->name,
                     'row' => $row->row_number,
                     'status' => $row->status,
@@ -46,12 +50,13 @@ class UnitStatusJsonController extends Controller
         $json = json_encode([
             'v' => 1,
             'project' => $project->name,
-            'unit' => $unit->nama,
+            'unit' => $unit?->nama ?? 'Semua',
             'generated_at' => now()->toIso8601String(),
             'queue' => $queue,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        $filename = sprintf('%s_%s_%s_status_%s.json', str($project->name)->slug('_'), $unit->kode, str($unit->nama)->slug('_'), now()->format('Ymd-Hi'));
+        $scope = $unit ? $unit->kode.'_'.str($unit->nama)->slug('_') : 'gabungan';
+        $filename = sprintf('%s_%s_status_%s.json', str($project->name)->slug('_'), $scope, now()->format('Ymd-Hi'));
 
         return response($json, 200, [
             'Content-Type' => 'application/json; charset=utf-8',

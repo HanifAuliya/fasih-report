@@ -31,10 +31,13 @@
                 <a href="{{ route('projects.pending.export', $project) }}" class="btn-secondary" title="Baris yang belum selesai dari semua {{ strtolower($unitLabel) }}, kolom asli tetap di posisi yang sama — untuk dimasukkan lagi ke script">
                     <x-icon name="download" class="size-4" /> Excel belum selesai
                 </a>
+                <a href="{{ route('projects.json', $project) }}" class="btn-secondary" title="Status terkini semua {{ strtolower($unitLabel) }} dalam satu file JSON (format laporan script, bisa diupload ulang)">
+                    <x-icon name="download" class="size-4" /> JSON gabungan
+                </a>
             @endif
             @if ($changedRowsCount > 0)
                 <a href="{{ route('projects.changes.export', $project) }}" class="btn-secondary" title="Semua baris dari seluruh {{ strtolower($unitLabel) }} yang statusnya diubah oleh laporan JSON">
-                    <x-icon name="download" class="size-4" /> Rekap perubahan JSON
+                    <x-icon name="download" class="size-4" /> Excel rekap perubahan
                     <span class="text-[11px] text-slate-400 tabular-nums">{{ number_format($changedRowsCount, 0, ',', '.') }}</span>
                 </a>
             @endif

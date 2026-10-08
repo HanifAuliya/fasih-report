@@ -66,6 +66,7 @@ Route::get('/data/{project}/rekap-perubahan', ProjectChangesExportController::cl
 Route::get('/data/{project}/excel-gabungan', ProjectCombinedExportController::class)->name('projects.combined.export');
 Route::get('/data/{project}/excel-induk', MasterExportController::class)->name('projects.master.export');
 Route::get('/data/{project}/belum-selesai', PendingExportController::class)->name('projects.pending.export');
+Route::get('/data/{project}/json', UnitStatusJsonController::class)->name('projects.json');
 Route::get('/data/{project}/kecamatan/{kode}/belum-selesai', PendingExportController::class)->name('projects.kecamatan.pending');
 
 Route::get('/files/{file}/download', [ReportFileController::class, 'download'])->name('files.download');
