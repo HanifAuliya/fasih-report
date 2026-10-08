@@ -69,9 +69,16 @@ class UnitReportService
                 }
 
                 // Laporan unit lain / format salah: batalkan, laporan aktif sebelumnya tetap dipakai
-                if ($result['matched'] === 0 && $result['duplicates'] === 0) {
+                if ($result['matched'] === 0 && $result['forwarded'] === []) {
                     throw new RuntimeException($this->noMatchReason($result, $unit));
                 }
+
+                // Hasil laporan unit lain untuk baris milik unit ini (diteruskan) dipasang lagi setelah reset
+                $unit->project->kecamatans()->whereKeyNot($unit->id)->get()->each(function (Kecamatan $other) use ($unit) {
+                    if ($report = $other->reports()->where('is_active', true)->first()) {
+                        $this->statusImporter->applyTo($report, $unit);
+                    }
+                });
 
                 return $this->describe($result, $unit);
             });
@@ -147,7 +154,7 @@ class UnitReportService
         return "{$result['records']} baris, {$result['matched']} cocok, {$result['updated']} diperbarui"
             .($result['skipped'] ? ", {$result['skipped']} dilewati" : '')
             .($result['unmatched'] ? ", {$result['unmatched']} tidak ditemukan di {$unit->nama}" : '')
-            .($result['duplicates'] ? ", {$result['duplicates']} sudah dihitung di unit lain" : '')
+            .($result['forwarded'] ? ', diteruskan ke '.collect($result['forwarded'])->map(fn (int $count, string $name) => "{$name} {$count}")->implode(', ') : '')
             .($statuses ? " · {$statuses}" : '')
             .($result['parse']['unknown_statuses'] ? ' · Diabaikan karena status belum dikenal: '.$this->unknownStatuses($result) : '');
     }

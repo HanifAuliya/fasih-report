@@ -35,61 +35,111 @@ class StatusReportImporter
     private array $lastParse = ['items' => 0, 'without_key' => 0, 'unknown_statuses' => [], 'sample_keys' => []];
 
     /**
-     * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, duplicates: int, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}
+     * Terapkan laporan ke unit. Baris yang kuncinya milik unit lain pekerjaan ini (mis. baris lama yang ikut
+     * di file Bagian baru, atau file "belum selesai" gabungan) diteruskan ke unit pemiliknya.
+     *
+     * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, forwarded: array<string, int>, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}
      */
     public function import(ReportFile $file, Kecamatan $unit): array
     {
         $settings = $unit->project->config();
         $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings);
 
-        $candidates = TargetRow::where('kecamatan_id', $unit->id)
+        $rows = TargetRow::where('kecamatan_id', $unit->id)
+            ->tracked()
             ->whereIn('row_key', array_keys($records))
-            ->get();
-        $rows = $candidates->whereNull('duplicate_of_id')->groupBy('row_key');
-        // Baris kembar: statusnya ikut unit pemiliknya, laporan unit ini tidak mengubahnya
-        $duplicateKeys = $candidates->whereNotNull('duplicate_of_id')->pluck('row_key')->flip();
+            ->get()
+            ->groupBy('row_key');
+        $elsewhere = TargetRow::where('project_id', $unit->project_id)
+            ->where('kecamatan_id', '!=', $unit->id)
+            ->tracked()
+            ->whereIn('row_key', array_diff(array_keys($records), $rows->keys()->all()))
+            ->with('kecamatan.project')
+            ->get()
+            ->groupBy('row_key');
 
         $defaultCode = $settings->statuses()->defaultCode();
-        $summary = ['records' => count($records), 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'unmatched' => 0, 'duplicates' => 0, 'statuses' => [], 'unit' => $unit->nama, 'parse' => $this->lastParse];
+        $summary = ['records' => count($records), 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'unmatched' => 0, 'forwarded' => [], 'statuses' => [], 'unit' => $unit->nama, 'parse' => $this->lastParse];
+        $touched = collect();
 
         foreach ($records as $rowKey => $record) {
-            if (! $rows->has($rowKey) && $duplicateKeys->has($rowKey)) {
-                $summary['duplicates']++;
+            if ($rows->has($rowKey)) {
+                $summary['matched']++;
 
-                continue;
-            }
-
-            if (! $rows->has($rowKey)) {
-                $summary['unmatched']++;
-
-                continue;
-            }
-
-            $summary['matched']++;
-
-            foreach ($rows[$rowKey] as $row) {
-                if (! $this->shouldApply($row, $record, $defaultCode)) {
-                    $summary['skipped']++;
-
-                    continue;
+                foreach ($rows[$rowKey] as $row) {
+                    if ($this->apply($row, $record, $file, $defaultCode)) {
+                        $summary['updated']++;
+                        $summary['statuses'][$record['status']] = ($summary['statuses'][$record['status']] ?? 0) + 1;
+                    } else {
+                        $summary['skipped']++;
+                    }
                 }
-
-                $row->update([
-                    'status' => $record['status'],
-                    'reason' => $record['reason'],
-                    'result' => $record['result'] ?: null,
-                    'status_at' => $record['done_at'] ?? now(),
-                    'status_file_id' => $file->id,
-                ]);
-
-                $summary['updated']++;
-                $summary['statuses'][$record['status']] = ($summary['statuses'][$record['status']] ?? 0) + 1;
+            } elseif ($elsewhere->has($rowKey)) {
+                foreach ($elsewhere[$rowKey] as $row) {
+                    if ($this->apply($row, $record, $file, $defaultCode)) {
+                        $summary['forwarded'][$row->kecamatan->nama] = ($summary['forwarded'][$row->kecamatan->nama] ?? 0) + 1;
+                        $touched->put($row->kecamatan_id, $row->kecamatan);
+                    }
+                }
+            } else {
+                $summary['unmatched']++;
             }
         }
 
         $unit->syncProgressFromTargets();
+        $touched->each(fn (Kecamatan $other) => $other->syncProgressFromTargets());
 
         return $summary;
+    }
+
+    /**
+     * Terapkan ulang laporan unit lain ke baris milik $owner saja (dipakai saat $owner direset & diaktifkan ulang,
+     * supaya hasil yang dulu diteruskan dari unit lain tidak hilang).
+     */
+    public function applyTo(ReportFile $file, Kecamatan $owner): int
+    {
+        if (! Storage::disk('local')->exists($file->path)) {
+            return 0;
+        }
+
+        $settings = $owner->project->config();
+        $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings);
+        $defaultCode = $settings->statuses()->defaultCode();
+        $applied = 0;
+
+        TargetRow::where('kecamatan_id', $owner->id)
+            ->tracked()
+            ->whereIn('row_key', array_keys($records))
+            ->get()
+            ->each(function (TargetRow $row) use ($records, $file, $defaultCode, &$applied) {
+                $applied += $this->apply($row, $records[$row->row_key], $file, $defaultCode) ? 1 : 0;
+            });
+
+        if ($applied > 0) {
+            $owner->syncProgressFromTargets();
+        }
+
+        return $applied;
+    }
+
+    /**
+     * @param  array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}  $record
+     */
+    private function apply(TargetRow $row, array $record, ReportFile $file, ?string $defaultCode): bool
+    {
+        if (! $this->shouldApply($row, $record, $defaultCode)) {
+            return false;
+        }
+
+        $row->update([
+            'status' => $record['status'],
+            'reason' => $record['reason'],
+            'result' => $record['result'] ?: null,
+            'status_at' => $record['done_at'] ?? now(),
+            'status_file_id' => $file->id,
+        ]);
+
+        return true;
     }
 
     /**

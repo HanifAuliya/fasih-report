@@ -169,21 +169,30 @@ class MasterWorkbookTest extends TestCase
         $this->assertSame(1, $bagian2->target, 'baris B tidak dihitung lagi di Bagian 2');
         $this->assertStringContainsString('1 sudah ada di BAGIAN 01', $project->files()->latest('id')->first()->summary);
 
-        // Laporan Bagian 2 berisi B & C: C diperbarui, B tetap milik Bagian 1
+        // Laporan Bagian 2 berisi B & C: C dicatat di Bagian 2, B diteruskan ke pemiliknya (Bagian 1)
         Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $bagian2->kode])
             ->set('reportUpload', UploadedFile::fake()->createWithContent('bagian2.json', json_encode(['queue' => [
-                ['id' => self::UUID_B, 'status' => 'done'],
+                ['id' => self::UUID_B, 'status' => 'done', 'doneAt' => '2026-10-08T03:00:00Z'],
                 ['id' => self::UUID_C, 'status' => 'done'],
             ]])))
             ->call('uploadReport')
             ->assertHasNoErrors();
 
-        $this->assertStringContainsString('1 sudah dihitung di unit lain', $bagian2->reports()->first()->summary);
+        $this->assertStringContainsString('diteruskan ke BAGIAN 01 1', $bagian2->reports()->first()->summary);
         $this->assertSame(1, $bagian2->refresh()->realisasi);
-        $this->assertSame(0, $bagian1->refresh()->realisasi);
+        $this->assertSame(1, $bagian1->refresh()->realisasi);
+
+        // Laporan Bagian 1 diupload (hanya A, lebih lama): hasil B dari Bagian 2 tetap tercatat
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $bagian1->kode])
+            ->set('reportUpload', UploadedFile::fake()->createWithContent('bagian1.json', json_encode(['queue' => [
+                ['id' => self::UUID_A, 'status' => 'done', 'doneAt' => '2026-10-07T03:00:00Z'],
+            ]])))
+            ->call('uploadReport')
+            ->assertHasNoErrors();
+        $this->assertSame(2, $bagian1->refresh()->realisasi);
 
         Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $bagian2->kode])
-            ->assertSee('Di BAGIAN 01')
+            ->assertSeeInOrder(['Di BAGIAN 01', '· Selesai'])
             ->assertSee('Sudah di unit lain (1)')
             ->set('statusFilter', KecamatanData::DUPLICATE_FILTER)
             ->assertSee('USAHA B')
