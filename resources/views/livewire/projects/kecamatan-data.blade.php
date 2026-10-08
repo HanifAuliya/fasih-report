@@ -156,6 +156,9 @@
                                 <option value="{{ $code }}">{{ $status['label'] }} ({{ number_format($statusCounts->get($code), 0, ',', '.') }})</option>
                             @endif
                         @endforeach
+                        @if ($notReadyCount)
+                            <option value="{{ \App\Livewire\Projects\KecamatanData::NOT_READY_FILTER }}">Belum siap ({{ number_format($notReadyCount, 0, ',', '.') }})</option>
+                        @endif
                         @if ($duplicateCount)
                             <option value="{{ \App\Livewire\Projects\KecamatanData::DUPLICATE_FILTER }}">Sudah di unit lain ({{ number_format($duplicateCount, 0, ',', '.') }})</option>
                         @endif
@@ -284,6 +287,10 @@
                                                     · {{ $statuses->label($owner->status) }}
                                                 @endif
                                             </a>
+                                        @elseif ($row->not_ready)
+                                            <span class="badge bg-amber-50 text-amber-700 ring-1 ring-amber-600/20" title="Kolom wajib ({{ implode(', ', $project->config()->requiredColumns()) }}) masih kosong: belum dihitung. Upload ulang Excel setelah diisi.">
+                                                Belum siap
+                                            </span>
                                         @elseif ($row->status)
                                             <div class="relative inline-flex items-center">
                                                 <span class="badge ring-1 {{ $statuses->badgeClasses($row->status) }}">

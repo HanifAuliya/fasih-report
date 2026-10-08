@@ -29,6 +29,7 @@ class ProjectSettings
         'initial_status_column' => null,
         'task_column' => null,
         'task_values' => ['1', 'ya', 'true'],
+        'required_columns' => [],
         'display_columns' => [],
         'statuses' => [],
     ];
@@ -99,6 +100,16 @@ class ProjectSettings
     public function taskValues(): array
     {
         return array_map('strtolower', self::toList($this->settings['task_values'] ?? self::DEFAULTS['task_values']));
+    }
+
+    /**
+     * Kolom yang harus terisi supaya baris bisa dikerjakan (mis. "KBLI Baru"); kosong = "Belum siap".
+     *
+     * @return list<string>
+     */
+    public function requiredColumns(): array
+    {
+        return self::toList($this->settings['required_columns'] ?? []);
     }
 
     /**

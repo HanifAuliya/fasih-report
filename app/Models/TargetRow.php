@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['project_id', 'kecamatan_id', 'target_sheet_id', 'row_number', 'row_key', 'duplicate_of_id', 'cells', 'status', 'reason', 'result', 'status_at', 'status_file_id'])]
+#[Fillable(['project_id', 'kecamatan_id', 'target_sheet_id', 'row_number', 'row_key', 'duplicate_of_id', 'not_ready', 'cells', 'status', 'reason', 'result', 'status_at', 'status_file_id'])]
 class TargetRow extends Model
 {
     protected function casts(): array
@@ -16,6 +16,7 @@ class TargetRow extends Model
             'cells' => 'array',
             'result' => 'array',
             'status_at' => 'datetime',
+            'not_ready' => 'boolean',
         ];
     }
 

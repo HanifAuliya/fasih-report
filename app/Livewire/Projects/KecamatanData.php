@@ -51,6 +51,9 @@ class KecamatanData extends Component
     /** Nilai filter status untuk baris kembar (kuncinya sudah dihitung di unit lain). */
     public const DUPLICATE_FILTER = 'kembar';
 
+    /** Nilai filter status untuk baris "belum siap" (dikerjakan tapi kolom wajib kosong). */
+    public const NOT_READY_FILTER = 'belum-siap';
+
     /** @var list<int|string> id baris yang dicentang untuk ubah status sekaligus */
     public array $selected = [];
 
@@ -254,7 +257,8 @@ class KecamatanData extends Component
             ? $sheet->rows()
                 ->when($filteredIds !== null, fn ($query) => $query->whereIn('id', $filteredIds))
                 ->when($this->statusFilter === self::DUPLICATE_FILTER, fn ($query) => $query->whereNotNull('duplicate_of_id'))
-                ->when($this->statusFilter && $this->statusFilter !== self::DUPLICATE_FILTER && $tracked, fn ($query) => $query->where('status', $this->statusFilter))
+                ->when($this->statusFilter === self::NOT_READY_FILTER, fn ($query) => $query->where('not_ready', true))
+                ->when($this->statusFilter && ! in_array($this->statusFilter, [self::DUPLICATE_FILTER, self::NOT_READY_FILTER], true) && $tracked, fn ($query) => $query->where('status', $this->statusFilter))
                 ->when($this->search, fn ($query) => $query->where('cells', 'like', '%'.str_replace(['%', '_'], ['\%', '\_'], $this->search).'%'))
                 ->paginate(in_array($this->perPage, [25, 50, 100, 250, 500], true) ? $this->perPage : 50)
             : null;
@@ -271,6 +275,7 @@ class KecamatanData extends Component
             'rows' => $rows,
             'owners' => $rows ? $this->ownerRows($rows->getCollection()) : collect(),
             'duplicateCount' => $sheet ? $sheet->rows()->whereNotNull('duplicate_of_id')->count() : 0,
+            'notReadyCount' => $sheet ? $sheet->rows()->where('not_ready', true)->count() : 0,
             'statusCounts' => $sheet && $tracked
                 ? $sheet->rows()->reorder()->toBase()->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status')
                 : collect(),

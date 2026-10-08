@@ -96,6 +96,7 @@ class ReportFileProcessor
 
         return "{$file->kecamatan->nama}: {$result['sheets']} sheet, {$result['rows']} baris ({$result['tracked']} diproses script)"
             .($duplicates !== '' ? ", {$duplicates} (tidak dihitung ulang)" : '')
+            .($result['not_ready'] ? ", {$result['not_ready']} belum siap (kolom wajib kosong)" : '')
             .($result['kept'] ? ", {$result['kept']} status lama dipertahankan" : '');
     }
 

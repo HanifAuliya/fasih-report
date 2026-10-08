@@ -38,6 +38,8 @@ class ProjectSettingsForm extends Component
 
     public string $taskValues = '';
 
+    public string $requiredColumns = '';
+
     public string $displayColumns = '';
 
     /** @var list<array{code: string, label: string, color: string, done: bool, aliases: string}> */
@@ -69,6 +71,7 @@ class ProjectSettingsForm extends Component
         $this->initialStatusColumn = (string) $config->initialStatusColumn();
         $this->taskColumn = (string) $config->taskColumn();
         $this->taskValues = implode(', ', $config->taskValues());
+        $this->requiredColumns = implode(', ', $config->requiredColumns());
         $this->displayColumns = implode(', ', $config->displayColumns());
         $this->statuses = $config->statuses()->all()
             ->map(fn (array $status) => [...$status, 'aliases' => implode(', ', $status['aliases'])])
@@ -119,6 +122,7 @@ class ProjectSettingsForm extends Component
             'initialStatusColumn' => ['nullable', 'string', 'max:100'],
             'taskColumn' => ['nullable', 'string', 'max:100'],
             'taskValues' => [Rule::requiredIf($this->taskColumn !== ''), 'nullable', 'string', 'max:200'],
+            'requiredColumns' => ['nullable', 'string', 'max:300'],
             'displayColumns' => ['nullable', 'string', 'max:2000'],
             'statuses' => ['required', 'array', 'min:1'],
             'statuses.*.code' => ['required', 'string', 'max:20', 'regex:/^[a-z0-9_-]+$/i', 'distinct:ignore_case'],
@@ -145,6 +149,7 @@ class ProjectSettingsForm extends Component
             'initial_status_column' => $this->initialStatusColumn,
             'task_column' => $this->taskColumn,
             'task_values' => ProjectSettings::toList($this->taskValues),
+            'required_columns' => ProjectSettings::toList($this->requiredColumns),
             'display_columns' => ProjectSettings::toList($this->displayColumns),
             'statuses' => $this->statuses,
         ]))->toArray()]);
@@ -176,6 +181,7 @@ class ProjectSettingsForm extends Component
             'initial_status_column' => $config->initialStatusColumn(),
             'task_column' => $config->taskColumn(),
             'task_values' => $config->taskValues(),
+            'required_columns' => $config->requiredColumns(),
             'statuses' => $config->statuses()->toArray(),
         ];
     }

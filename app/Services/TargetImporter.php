@@ -29,7 +29,7 @@ class TargetImporter
     private const UUID_PATTERN = '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i';
 
     /**
-     * @return array{sheets: int, rows: int, tracked: int, kept: int, duplicates: array<int, int>}
+     * @return array{sheets: int, rows: int, tracked: int, kept: int, not_ready: int, duplicates: array<int, int>}
      */
     public function import(ReportFile $file, Kecamatan $kecamatan): array
     {
@@ -43,7 +43,7 @@ class TargetImporter
             ->keyBy('row_key');
 
         $owners = $this->ownersElsewhere($kecamatan);
-        $summary = ['sheets' => 0, 'rows' => 0, 'tracked' => 0, 'kept' => 0, 'duplicates' => []];
+        $summary = ['sheets' => 0, 'rows' => 0, 'tracked' => 0, 'kept' => 0, 'not_ready' => 0, 'duplicates' => []];
 
         DB::transaction(function () use ($sheets, $kecamatan, $file, $settings, $previous, $owners, &$summary) {
             $kecamatan->targetSheets()->delete();
@@ -58,22 +58,15 @@ class TargetImporter
                     'row_count' => count($sheet['rows']),
                 ]);
 
-                $keyColumn = $settings->keyColumn() !== null ? $targetSheet->columnIndex($settings->keyColumn()) : null;
-                $taskColumn = $settings->taskColumn() !== null ? $targetSheet->columnIndex($settings->taskColumn()) : null;
+                $columns = $this->matchingColumns($targetSheet, $settings);
                 $targetSheet->tracked = count($sheet['rows']) > 0
-                    && ($settings->keyMode() === ProjectSettings::KEY_ROW || $keyColumn !== null);
+                    && ($settings->keyMode() === ProjectSettings::KEY_ROW || $columns['key'] !== null);
                 $targetSheet->save();
 
                 $records = [];
 
                 foreach ($sheet['rows'] as $rowNumber => $cells) {
-                    $rowKey = match (true) {
-                        ! $targetSheet->tracked => null,
-                        // Bukan baris yang perlu dikerjakan (mis. Edit KBLI ≠ 1): tampil, tidak dihitung
-                        $taskColumn !== null && ! $settings->isTaskValue($cells[$taskColumn] ?? null) => null,
-                        $settings->keyMode() === ProjectSettings::KEY_ROW => self::sheetRowKey($sheet['name'], $rowNumber),
-                        default => self::normalizeKey($cells[$keyColumn] ?? null),
-                    };
+                    [$rowKey, $notReady] = $this->rowKeyFor($targetSheet, $cells, $rowNumber, $settings, $columns);
 
                     $state = ['status' => null, 'reason' => null, 'result' => null, 'status_at' => null, 'status_file_id' => null];
                     // Kunci sudah dimiliki unit lain (mis. sudah ada di Bagian sebelumnya): tampil, tidak dihitung
@@ -102,6 +95,7 @@ class TargetImporter
                         'row_number' => $rowNumber,
                         'row_key' => $rowKey,
                         'duplicate_of_id' => $duplicateOf,
+                        'not_ready' => $notReady,
                         'cells' => json_encode($cells, JSON_UNESCAPED_UNICODE),
                         ...$state,
                         'created_at' => $now,
@@ -110,6 +104,7 @@ class TargetImporter
 
                     $summary['rows']++;
                     $summary['tracked'] += $rowKey && $duplicateOf === null ? 1 : 0;
+                    $summary['not_ready'] += $notReady ? 1 : 0;
 
                     if (count($records) >= self::CHUNK) {
                         TargetRow::insert($records);
@@ -128,6 +123,61 @@ class TargetImporter
         $kecamatan->syncProgressFromTargets();
 
         return $summary;
+    }
+
+    /**
+     * Posisi kolom yang dipakai untuk menentukan kunci baris di satu sheet.
+     *
+     * @return array{key: ?int, task: ?int, required: array<string, int>}
+     */
+    private function matchingColumns(TargetSheet $sheet, ProjectSettings $settings): array
+    {
+        $required = [];
+
+        foreach ($settings->requiredColumns() as $name) {
+            if (($index = $sheet->columnIndex($name)) !== null) {
+                $required[$name] = $index;
+            }
+        }
+
+        return [
+            'key' => $settings->keyColumn() !== null ? $sheet->columnIndex($settings->keyColumn()) : null,
+            'task' => $settings->taskColumn() !== null ? $sheet->columnIndex($settings->taskColumn()) : null,
+            'required' => $required,
+        ];
+    }
+
+    /**
+     * Kunci baris (null = tidak dihitung) & apakah baris "belum siap" (dikerjakan tapi kolom wajib kosong).
+     *
+     * @param  list<mixed>  $cells
+     * @param  array{key: ?int, task: ?int, required: array<string, int>}  $columns
+     * @return array{0: ?string, 1: bool}
+     */
+    private function rowKeyFor(TargetSheet $sheet, array $cells, int $rowNumber, ProjectSettings $settings, array $columns): array
+    {
+        if (! $sheet->tracked) {
+            return [null, false];
+        }
+
+        // Bukan baris yang perlu dikerjakan (mis. Edit KBLI ≠ 1): tampil, tidak dihitung
+        if ($columns['task'] !== null && ! $settings->isTaskValue($cells[$columns['task']] ?? null)) {
+            return [null, false];
+        }
+
+        // Perlu dikerjakan tapi isian wajib kosong (mis. KBLI Baru): belum siap, belum dihitung
+        foreach ($columns['required'] as $index) {
+            if (trim((string) ($cells[$index] ?? '')) === '') {
+                return [null, true];
+            }
+        }
+
+        return [
+            $settings->keyMode() === ProjectSettings::KEY_ROW
+                ? self::sheetRowKey($sheet->name, $rowNumber)
+                : self::normalizeKey($cells[$columns['key']] ?? null),
+            false,
+        ];
     }
 
     /**
@@ -162,30 +212,23 @@ class TargetImporter
         $changed = 0;
 
         foreach ($kecamatan->targetSheets()->get() as $sheet) {
-            $keyColumn = $settings->keyColumn() !== null ? $sheet->columnIndex($settings->keyColumn()) : null;
-            $taskColumn = $settings->taskColumn() !== null ? $sheet->columnIndex($settings->taskColumn()) : null;
+            $columns = $this->matchingColumns($sheet, $settings);
             $sheet->update([
-                'tracked' => $sheet->row_count > 0 && ($settings->keyMode() === ProjectSettings::KEY_ROW || $keyColumn !== null),
+                'tracked' => $sheet->row_count > 0 && ($settings->keyMode() === ProjectSettings::KEY_ROW || $columns['key'] !== null),
             ]);
 
             TargetRow::where('target_sheet_id', $sheet->id)
-                ->select(['id', 'row_number', 'row_key', 'duplicate_of_id', 'cells'])
-                ->chunkById(500, function ($rows) use ($sheet, $settings, $keyColumn, $taskColumn, $owners, &$changed) {
+                ->select(['id', 'row_number', 'row_key', 'duplicate_of_id', 'not_ready', 'cells'])
+                ->chunkById(500, function ($rows) use ($sheet, $settings, $columns, $owners, &$changed) {
                     foreach ($rows as $row) {
-                        $rowKey = match (true) {
-                            ! $sheet->tracked => null,
-                            $taskColumn !== null && ! $settings->isTaskValue($row->cells[$taskColumn] ?? null) => null,
-                            $settings->keyMode() === ProjectSettings::KEY_ROW => self::sheetRowKey($sheet->name, $row->row_number),
-                            default => self::normalizeKey($row->cells[$keyColumn] ?? null),
-                        };
-
+                        [$rowKey, $notReady] = $this->rowKeyFor($sheet, $row->cells, $row->row_number, $settings, $columns);
                         $duplicateOf = $rowKey !== null ? ($owners[$rowKey] ?? null) : null;
 
-                        if ($rowKey !== $row->row_key || $duplicateOf !== $row->duplicate_of_id) {
+                        if ($rowKey !== $row->row_key || $duplicateOf !== $row->duplicate_of_id || $notReady !== $row->not_ready) {
                             // Baris yang tidak lagi dilacak (atau jadi kembar) tidak membawa status lama
                             TargetRow::whereKey($row->id)->update($rowKey === null || $duplicateOf !== null
-                                ? ['row_key' => $rowKey, 'duplicate_of_id' => $duplicateOf, 'status' => null, 'reason' => null, 'status_at' => null, 'status_file_id' => null]
-                                : ['row_key' => $rowKey, 'duplicate_of_id' => null]);
+                                ? ['row_key' => $rowKey, 'duplicate_of_id' => $duplicateOf, 'not_ready' => $notReady, 'status' => null, 'reason' => null, 'status_at' => null, 'status_file_id' => null]
+                                : ['row_key' => $rowKey, 'duplicate_of_id' => null, 'not_ready' => false]);
                             $changed++;
                         }
                     }

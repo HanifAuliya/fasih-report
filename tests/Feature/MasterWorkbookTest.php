@@ -252,6 +252,50 @@ class MasterWorkbookTest extends TestCase
         $this->assertSame(['USAHA B', 'USAHA C'], array_column(array_values($all['rows']), 2));
     }
 
+    public function test_marked_rows_with_empty_required_column_are_not_ready_until_filled(): void
+    {
+        $project = $this->createProject();
+        $project->update(['settings' => [...$project->settings, 'required_columns' => ['KBLI Baru']]]);
+
+        $workbook = function (string $kbliB): UploadedFile {
+            $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+            $writer = new Writer;
+            $writer->openToFile($path);
+            $writer->addRow(Row::fromValues(['kec', 'nama_usaha', 'Edit KBLI (1=Ya)', 'KBLI Baru', 'link']));
+            $writer->addRow(Row::fromValues(['HARUYAN', 'USAHA A', '1', '01133', $this->link(self::UUID_A)]));
+            $writer->addRow(Row::fromValues(['HARUYAN', 'USAHA B', '1', $kbliB, $this->link(self::UUID_B)]));
+            $writer->addRow(Row::fromValues(['BARABAI', 'USAHA C', '', '', $this->link(self::UUID_C)]));
+            $writer->close();
+
+            return UploadedFile::fake()->createWithContent('Bagian 1 Pengecekan KBLI.xlsx', file_get_contents($path));
+        };
+        $upload = fn (UploadedFile $file) => Livewire::test(KecamatanTable::class, ['project' => $project->refresh()])
+            ->set('uploads', [$file])
+            ->call('saveUploads')
+            ->assertHasNoErrors();
+
+        $upload($workbook(''));
+        $unit = $project->kecamatans()->sole();
+        $this->assertSame(1, $unit->target, 'hanya A yang siap dikerjakan');
+        $this->assertStringContainsString('1 belum siap (kolom wajib kosong)', $project->files()->latest('id')->first()->summary);
+
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => '01'])
+            ->assertSee('Belum siap (1)')
+            ->set('statusFilter', KecamatanData::NOT_READY_FILTER)
+            ->assertSee('USAHA B')
+            ->assertDontSee('USAHA A');
+
+        $pending = app(TargetImporter::class)->readWorkbook(
+            $this->get(route('projects.kecamatan.pending', [$project, '01']))->getFile()->getPathname()
+        )[0];
+        $this->assertSame(['USAHA A'], array_column(array_values($pending['rows']), 1));
+
+        // KBLI Baru sudah diisi: upload ulang, B jadi target
+        $upload($workbook('47111'));
+        $this->assertSame(2, $unit->refresh()->target);
+        $this->assertSame(0, $unit->targetRows()->where('not_ready', true)->count());
+    }
+
     public function test_master_export_is_not_available_before_preparing(): void
     {
         $project = $this->createProject();
