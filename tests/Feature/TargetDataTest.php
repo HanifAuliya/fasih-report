@@ -327,7 +327,8 @@ class TargetDataTest extends TestCase
         $this->upload($this->targetWorkbook('target_OSS_020_BATU_BENAWA.xlsx'));
 
         $haruyanRows = $this->haruyan()->targetRows()->tracked()->pluck('id');
-        $otherUnitRow = TargetRow::tracked()->whereNotIn('id', $haruyanRows)->first();
+        // File sama di kecamatan lain: barisnya kembar (dihitung di Haruyan), tetap tidak boleh ikut berubah
+        $otherUnitRow = TargetRow::whereNotIn('id', $haruyanRows)->whereNotNull('row_key')->first();
 
         Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
             ->assertSee('Pilih semua baris di halaman ini')
