@@ -199,6 +199,50 @@ class MasterWorkbookTest extends TestCase
         $this->assertSame(2, $bagian2->targetRows()->tracked()->count());
     }
 
+    public function test_pending_export_contains_only_unfinished_rows_with_original_columns_first(): void
+    {
+        $project = $this->createProject();
+        $upload = fn (UploadedFile $file) => Livewire::test(KecamatanTable::class, ['project' => $project])
+            ->set('uploads', [$file])
+            ->call('saveUploads')
+            ->assertHasNoErrors();
+
+        $upload($this->workbook('Bagian 1 Pengecekan KBLI.xlsx', [
+            ['1', 'HARUYAN', 'USAHA A', '1', $this->link(self::UUID_A)],
+            ['2', 'HARUYAN', 'USAHA B', '1', $this->link(self::UUID_B)],
+            ['9', 'HARUYAN', 'BUKAN TARGET', '', $this->link('11111111-2222-3333-4444-555555555555')],
+        ]));
+        $upload($this->workbook('Bagian 2 Pengecekan KBLI.xlsx', [
+            ['2', 'HARUYAN', 'USAHA B', '1', $this->link(self::UUID_B)],
+            ['3', 'BARABAI', 'USAHA C', '1', $this->link(self::UUID_C)],
+        ]));
+
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => '01'])
+            ->assertSee('Belum selesai')
+            ->set('reportUpload', UploadedFile::fake()->createWithContent('laporan.json', json_encode(['queue' => [
+                ['id' => self::UUID_A, 'status' => 'done'],
+                ['id' => self::UUID_B, 'status' => 'red', 'reason' => 'gagal simpan'],
+            ]])))
+            ->call('uploadReport')
+            ->assertHasNoErrors();
+
+        auth()->logout();
+        $read = fn (string $url) => app(TargetImporter::class)->readWorkbook($this->get($url)->assertOk()->getFile()->getPathname())[0];
+
+        // Satu unit: hanya B (A selesai, baris bukan target tidak ikut); kolom asli di posisi semula
+        $unit = $read(route('projects.kecamatan.pending', [$project, '01']));
+        $this->assertSame([...self::HEADERS, 'status_web', 'keterangan_web', 'unit_web', 'baris_asli'], $unit['headers']);
+        $rows = array_values($unit['rows']);
+        $this->assertCount(1, $rows);
+        $this->assertSame(['2', 'HARUYAN', 'USAHA B', '1'], array_slice($rows[0], 0, 4));
+        $this->assertSame('gagal simpan', $rows[0][6]);
+        $this->assertSame(3, $rows[0][8], 'nomor baris asli di file Bagian');
+
+        // Semua unit: B (Bagian 1) & C (Bagian 2); B kembar di Bagian 2 tidak dobel
+        $all = $read(route('projects.pending.export', $project));
+        $this->assertSame(['USAHA B', 'USAHA C'], array_column(array_values($all['rows']), 2));
+    }
+
     public function test_master_export_is_not_available_before_preparing(): void
     {
         $project = $this->createProject();

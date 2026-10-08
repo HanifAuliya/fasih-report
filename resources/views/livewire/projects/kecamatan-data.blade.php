@@ -54,6 +54,9 @@
                     <x-progress :value="$percent" />
                 </div>
                 @if ($sheets->isNotEmpty())
+                    <a href="{{ route('projects.kecamatan.pending', [$project, $kecamatan->kode]) }}" class="btn-secondary shrink-0" title="Hanya baris yang belum selesai (kolom asli tetap) — untuk dimasukkan lagi ke script">
+                        <x-icon name="download" class="size-4" /> Belum selesai
+                    </a>
                     <a href="{{ route('projects.kecamatan.export', [$project, $kecamatan->kode]) }}" class="btn-secondary shrink-0" title="Download Excel dengan status terbaru">
                         <x-icon name="download" class="size-4" /> Excel
                     </a>
