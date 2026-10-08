@@ -145,6 +145,60 @@ class MasterWorkbookTest extends TestCase
         $this->assertSame($statuses->label('pending'), $rows[3][5]);
     }
 
+    public function test_rows_already_in_an_earlier_bagian_are_not_counted_twice(): void
+    {
+        $project = $this->createProject();
+        $upload = fn (UploadedFile $file) => Livewire::test(KecamatanTable::class, ['project' => $project])
+            ->set('uploads', [$file])
+            ->call('saveUploads')
+            ->assertHasNoErrors();
+
+        $upload($this->workbook('Bagian 1 Pengecekan KBLI.xlsx', [
+            ['1', 'HARUYAN', 'USAHA A', '1', $this->link(self::UUID_A)],
+            ['2', 'HARUYAN', 'USAHA B', '1', $this->link(self::UUID_B)],
+        ]));
+        // Bagian 2 dari file yang sama (nama file beda): B sudah ada di Bagian 1, C baru
+        $upload($this->workbook('Bagian 2 KBLI terbaru.xlsx', [
+            ['2', 'HARUYAN', 'USAHA B', '1', $this->link(self::UUID_B)],
+            ['3', 'BARABAI', 'USAHA C', '1', $this->link(self::UUID_C)],
+        ]));
+
+        $bagian1 = $project->kecamatans()->where('nama', 'BAGIAN 01')->sole();
+        $bagian2 = $project->kecamatans()->where('nama', 'BAGIAN 02')->sole();
+        $this->assertSame(2, $bagian1->target);
+        $this->assertSame(1, $bagian2->target, 'baris B tidak dihitung lagi di Bagian 2');
+        $this->assertStringContainsString('1 sudah ada di BAGIAN 01', $project->files()->latest('id')->first()->summary);
+
+        // Laporan Bagian 2 berisi B & C: C diperbarui, B tetap milik Bagian 1
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $bagian2->kode])
+            ->set('reportUpload', UploadedFile::fake()->createWithContent('bagian2.json', json_encode(['queue' => [
+                ['id' => self::UUID_B, 'status' => 'done'],
+                ['id' => self::UUID_C, 'status' => 'done'],
+            ]])))
+            ->call('uploadReport')
+            ->assertHasNoErrors();
+
+        $this->assertStringContainsString('1 sudah dihitung di unit lain', $bagian2->reports()->first()->summary);
+        $this->assertSame(1, $bagian2->refresh()->realisasi);
+        $this->assertSame(0, $bagian1->refresh()->realisasi);
+
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $bagian2->kode])
+            ->assertSee('Di BAGIAN 01')
+            ->assertSee('Sudah di unit lain (1)')
+            ->set('statusFilter', KecamatanData::DUPLICATE_FILTER)
+            ->assertSee('USAHA B')
+            ->assertDontSee('USAHA C');
+
+        $sheet = app(TargetImporter::class)->readWorkbook(
+            $this->get(route('projects.kecamatan.export', [$project, $bagian2->kode]))->assertOk()->getFile()->getPathname()
+        )[0];
+        $this->assertSame('Sudah di BAGIAN 01', array_values($sheet['rows'])[0][5]);
+
+        // Bagian 1 dihapus: B kembali dihitung di Bagian 2
+        $bagian1->delete();
+        $this->assertSame(2, $bagian2->targetRows()->tracked()->count());
+    }
+
     public function test_master_export_is_not_available_before_preparing(): void
     {
         $project = $this->createProject();

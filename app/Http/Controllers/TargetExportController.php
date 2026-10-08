@@ -51,7 +51,7 @@ class TargetExportController extends Controller
 
             $writer->addRow(Row::fromValues($tracked ? [...$headers, 'status_web', 'keterangan_web', 'waktu_status_web'] : $headers));
 
-            $sheet->rows()->chunk(500, function ($rows) use ($writer, $statuses, $tracked, $processColumn, $initialStatusColumn) {
+            $sheet->rows()->with('duplicateOf:id,nama')->chunk(500, function ($rows) use ($writer, $statuses, $tracked, $processColumn, $initialStatusColumn) {
                 foreach ($rows as $row) {
                     $values = $this->rowValues($row, $statuses, $tracked, $processColumn, $initialStatusColumn);
                     $style = $tracked && $row->status ? XlsxStyleBook::openSpoutStyle($statuses->all()[$row->status]['color'] ?? null) : null;
@@ -95,7 +95,11 @@ class TargetExportController extends Controller
 
         return [
             ...$cells,
-            $row->status ? $statuses->label($row->status) : '',
+            match (true) {
+                $row->duplicate_of_id !== null => 'Sudah di '.($row->duplicateOf?->nama ?? 'unit lain'),
+                $row->status !== null => $statuses->label($row->status),
+                default => '',
+            },
             $row->reason ?? '',
             $row->status_at?->format('Y-m-d H:i') ?? '',
         ];

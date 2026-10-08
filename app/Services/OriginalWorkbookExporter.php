@@ -95,7 +95,8 @@ class OriginalWorkbookExporter
     private function writeStatuses(string $xml, TargetSheet $sheet, StatusSet $statuses, ?XlsxStyleBook $styleBook): array
     {
         $rows = TargetRow::where('target_sheet_id', $sheet->id)
-            ->get(['row_number', 'status', 'reason', 'status_at'])
+            ->with('duplicateOf:id,nama')
+            ->get(['row_number', 'status', 'reason', 'status_at', 'duplicate_of_id'])
             ->keyBy('row_number');
 
         $firstStatusColumn = count($sheet->headers);
@@ -118,7 +119,11 @@ class OriginalWorkbookExporter
                 foreach (self::STATUS_HEADERS as $offset => $header) {
                     $values[$firstStatusColumn + $offset] = $header;
                 }
-            } elseif ($row = $rows->get($rowNumber)) {
+            } elseif (($row = $rows->get($rowNumber)) && $row->duplicateOf) {
+                // Baris kembar: dihitung di unit lain
+                $statusColor = 'slate';
+                $values = [$firstStatusColumn => 'Sudah di '.$row->duplicateOf->nama];
+            } elseif ($row) {
                 $statusColor = $row->status ? ($statuses->all()[$row->status]['color'] ?? 'slate') : null;
                 $values = [
                     $firstStatusColumn => $row->status ? $statuses->label($row->status) : '',

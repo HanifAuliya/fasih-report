@@ -64,6 +64,7 @@ class ProjectCombinedExportController extends Controller
                 $unit = $units[$sheet->kecamatan_id];
 
                 TargetRow::where('target_sheet_id', $sheet->id)
+                    ->with('duplicateOf:id,nama')
                     ->orderBy('row_number')
                     ->lazy(500)
                     ->each(function (TargetRow $row) use ($writer, $sheet, $unit, $headers, $tracked, $statuses, $processColumn, $initialStatusColumn, &$written) {
@@ -94,7 +95,11 @@ class ProjectCombinedExportController extends Controller
                         $statusColumn = count($values);
                         $values = [
                             ...$values,
-                            $row->status ? $statuses->label($row->status) : '',
+                            match (true) {
+                                $row->duplicate_of_id !== null => 'Sudah di '.($row->duplicateOf?->nama ?? 'unit lain'),
+                                $row->status !== null => $statuses->label($row->status),
+                                default => '',
+                            },
                             $row->reason ?? '',
                             $row->status_at?->format('Y-m-d H:i') ?? '',
                         ];

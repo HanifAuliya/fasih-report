@@ -29,7 +29,7 @@ class TargetImporter
     private const UUID_PATTERN = '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i';
 
     /**
-     * @return array{sheets: int, rows: int, tracked: int, kept: int}
+     * @return array{sheets: int, rows: int, tracked: int, kept: int, duplicates: array<int, int>}
      */
     public function import(ReportFile $file, Kecamatan $kecamatan): array
     {
@@ -42,9 +42,10 @@ class TargetImporter
             ->get(['row_key', 'status', 'reason', 'result', 'status_at', 'status_file_id'])
             ->keyBy('row_key');
 
-        $summary = ['sheets' => 0, 'rows' => 0, 'tracked' => 0, 'kept' => 0];
+        $owners = $this->ownersElsewhere($kecamatan);
+        $summary = ['sheets' => 0, 'rows' => 0, 'tracked' => 0, 'kept' => 0, 'duplicates' => []];
 
-        DB::transaction(function () use ($sheets, $kecamatan, $file, $settings, $previous, &$summary) {
+        DB::transaction(function () use ($sheets, $kecamatan, $file, $settings, $previous, $owners, &$summary) {
             $kecamatan->targetSheets()->delete();
             $now = now();
 
@@ -75,8 +76,12 @@ class TargetImporter
                     };
 
                     $state = ['status' => null, 'reason' => null, 'result' => null, 'status_at' => null, 'status_file_id' => null];
+                    // Kunci sudah dimiliki unit lain (mis. sudah ada di Bagian sebelumnya): tampil, tidak dihitung
+                    $duplicateOf = $rowKey !== null ? ($owners[$rowKey] ?? null) : null;
 
-                    if ($rowKey && $previous->has($rowKey)) {
+                    if ($duplicateOf !== null) {
+                        $summary['duplicates'][$duplicateOf] = ($summary['duplicates'][$duplicateOf] ?? 0) + 1;
+                    } elseif ($rowKey && $previous->has($rowKey)) {
                         $old = $previous[$rowKey];
                         $state = [
                             'status' => $old->status,
@@ -96,6 +101,7 @@ class TargetImporter
                         'target_sheet_id' => $targetSheet->id,
                         'row_number' => $rowNumber,
                         'row_key' => $rowKey,
+                        'duplicate_of_id' => $duplicateOf,
                         'cells' => json_encode($cells, JSON_UNESCAPED_UNICODE),
                         ...$state,
                         'created_at' => $now,
@@ -103,7 +109,7 @@ class TargetImporter
                     ];
 
                     $summary['rows']++;
-                    $summary['tracked'] += $rowKey ? 1 : 0;
+                    $summary['tracked'] += $rowKey && $duplicateOf === null ? 1 : 0;
 
                     if (count($records) >= self::CHUNK) {
                         TargetRow::insert($records);
@@ -125,6 +131,25 @@ class TargetImporter
     }
 
     /**
+     * Kunci yang sudah dihitung di unit lain pekerjaan ini => id unit pemiliknya.
+     * Hanya untuk pencocokan lewat kolom kunci (kunci "Sheet1!4" berbeda arti di tiap file).
+     *
+     * @return array<string, int>
+     */
+    private function ownersElsewhere(Kecamatan $kecamatan): array
+    {
+        if ($kecamatan->project->config()->keyMode() !== ProjectSettings::KEY_COLUMN) {
+            return [];
+        }
+
+        return TargetRow::where('project_id', $kecamatan->project_id)
+            ->where('kecamatan_id', '!=', $kecamatan->id)
+            ->tracked()
+            ->pluck('kecamatan_id', 'row_key')
+            ->all();
+    }
+
+    /**
      * Hitung ulang kunci baris dari isi baris yang sudah tersimpan, sesuai pengaturan sekarang
      * (mis. setelah cara pencocokan diganti dari nomor baris ke kolom link). Tidak butuh file Excel.
      *
@@ -133,6 +158,7 @@ class TargetImporter
     public function rekey(Kecamatan $kecamatan): int
     {
         $settings = $kecamatan->project->config();
+        $owners = $this->ownersElsewhere($kecamatan);
         $changed = 0;
 
         foreach ($kecamatan->targetSheets()->get() as $sheet) {
@@ -143,8 +169,8 @@ class TargetImporter
             ]);
 
             TargetRow::where('target_sheet_id', $sheet->id)
-                ->select(['id', 'row_number', 'row_key', 'cells'])
-                ->chunkById(500, function ($rows) use ($sheet, $settings, $keyColumn, $taskColumn, &$changed) {
+                ->select(['id', 'row_number', 'row_key', 'duplicate_of_id', 'cells'])
+                ->chunkById(500, function ($rows) use ($sheet, $settings, $keyColumn, $taskColumn, $owners, &$changed) {
                     foreach ($rows as $row) {
                         $rowKey = match (true) {
                             ! $sheet->tracked => null,
@@ -153,11 +179,13 @@ class TargetImporter
                             default => self::normalizeKey($row->cells[$keyColumn] ?? null),
                         };
 
-                        if ($rowKey !== $row->row_key) {
-                            // Baris yang tidak lagi dilacak tidak membawa status lama
-                            TargetRow::whereKey($row->id)->update($rowKey === null
-                                ? ['row_key' => null, 'status' => null, 'reason' => null, 'status_at' => null, 'status_file_id' => null]
-                                : ['row_key' => $rowKey]);
+                        $duplicateOf = $rowKey !== null ? ($owners[$rowKey] ?? null) : null;
+
+                        if ($rowKey !== $row->row_key || $duplicateOf !== $row->duplicate_of_id) {
+                            // Baris yang tidak lagi dilacak (atau jadi kembar) tidak membawa status lama
+                            TargetRow::whereKey($row->id)->update($rowKey === null || $duplicateOf !== null
+                                ? ['row_key' => $rowKey, 'duplicate_of_id' => $duplicateOf, 'status' => null, 'reason' => null, 'status_at' => null, 'status_file_id' => null]
+                                : ['row_key' => $rowKey, 'duplicate_of_id' => null]);
                             $changed++;
                         }
                     }

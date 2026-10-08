@@ -90,7 +90,12 @@ class ReportFileProcessor
     {
         $result = $this->targetImporter->import($file, $file->kecamatan);
 
+        $duplicates = collect($result['duplicates'])
+            ->map(fn (int $count, int $unitId) => $count.' sudah ada di '.(Kecamatan::find($unitId)?->nama ?? 'unit lain'))
+            ->implode(', ');
+
         return "{$file->kecamatan->nama}: {$result['sheets']} sheet, {$result['rows']} baris ({$result['tracked']} diproses script)"
+            .($duplicates !== '' ? ", {$duplicates} (tidak dihitung ulang)" : '')
             .($result['kept'] ? ", {$result['kept']} status lama dipertahankan" : '');
     }
 

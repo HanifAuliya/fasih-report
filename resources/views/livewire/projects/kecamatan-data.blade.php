@@ -153,6 +153,9 @@
                                 <option value="{{ $code }}">{{ $status['label'] }} ({{ number_format($statusCounts->get($code), 0, ',', '.') }})</option>
                             @endif
                         @endforeach
+                        @if ($duplicateCount)
+                            <option value="{{ \App\Livewire\Projects\KecamatanData::DUPLICATE_FILTER }}">Sudah di unit lain ({{ number_format($duplicateCount, 0, ',', '.') }})</option>
+                        @endif
                     </select>
                 @endif
 
@@ -234,7 +237,7 @@
                                     @can('manage')
                                         @if ($tracked && $rows->isNotEmpty())
                                             <input type="checkbox" title="Pilih semua baris di halaman ini"
-                                                x-data="{ ids: @js($rows->pluck('id')->map(fn ($id) => (string) $id)->values()) }"
+                                                x-data="{ ids: @js($rows->filter(fn ($row) => $row->row_key && ! $row->duplicate_of_id)->pluck('id')->map(fn ($id) => (string) $id)->values()) }"
                                                 :checked="ids.length && ids.every(id => $wire.selected.includes(id))"
                                                 x-on:change="$wire.selected = $event.target.checked ? [...ids] : []"
                                                 class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">
@@ -257,7 +260,7 @@
                             <tr wire:key="row-{{ $row->id }}" class="group {{ $statuses->rowClasses($row->status) }} hover:bg-brand-50/60">
                                 <td class="sticky left-0 bg-slate-50 px-2 py-1 whitespace-nowrap group-hover:bg-brand-50">
                                     @can('manage')
-                                        @if ($tracked)
+                                        @if ($tracked && $row->row_key && ! $row->duplicate_of_id)
                                             <input type="checkbox" wire:model="selected" value="{{ $row->id }}" title="Pilih baris ini"
                                                 class="mr-1.5 rounded border-slate-300 align-middle text-brand-600 focus:ring-brand-500">
                                         @endif
@@ -269,7 +272,16 @@
                                 </td>
                                 @if ($tracked)
                                     <td class="whitespace-nowrap">
-                                        @if ($row->status)
+                                        @if ($row->duplicate_of_id && ($owner = $owners->get($row->row_key)))
+                                            {{-- Baris kembar: dihitung di unit pemiliknya --}}
+                                            <a href="{{ route('projects.kecamatan', [$project, $owner->kecamatan->kode]) }}" wire:navigate
+                                                class="badge bg-slate-100 text-slate-600 ring-1 ring-slate-500/20 hover:bg-slate-200" title="Baris ini sudah dihitung di {{ $owner->kecamatan->nama }}">
+                                                Di {{ $owner->kecamatan->nama }}
+                                                @if ($owner->status)
+                                                    · {{ $statuses->label($owner->status) }}
+                                                @endif
+                                            </a>
+                                        @elseif ($row->status)
                                             <div class="relative inline-flex items-center">
                                                 <span class="badge ring-1 {{ $statuses->badgeClasses($row->status) }}">
                                                     {{ $statuses->label($row->status) }}

@@ -48,6 +48,9 @@ class KecamatanData extends Component
 
     public ?int $detailId = null;
 
+    /** Nilai filter status untuk baris kembar (kuncinya sudah dihitung di unit lain). */
+    public const DUPLICATE_FILTER = 'kembar';
+
     /** @var list<int|string> id baris yang dicentang untuk ubah status sekaligus */
     public array $selected = [];
 
@@ -250,7 +253,8 @@ class KecamatanData extends Component
         $rows = $sheet
             ? $sheet->rows()
                 ->when($filteredIds !== null, fn ($query) => $query->whereIn('id', $filteredIds))
-                ->when($this->statusFilter && $tracked, fn ($query) => $query->where('status', $this->statusFilter))
+                ->when($this->statusFilter === self::DUPLICATE_FILTER, fn ($query) => $query->whereNotNull('duplicate_of_id'))
+                ->when($this->statusFilter && $this->statusFilter !== self::DUPLICATE_FILTER && $tracked, fn ($query) => $query->where('status', $this->statusFilter))
                 ->when($this->search, fn ($query) => $query->where('cells', 'like', '%'.str_replace(['%', '_'], ['\%', '\_'], $this->search).'%'))
                 ->paginate(in_array($this->perPage, [25, 50, 100, 250, 500], true) ? $this->perPage : 50)
             : null;
@@ -265,6 +269,8 @@ class KecamatanData extends Component
             'tracked' => $tracked,
             'columns' => $sheet ? $this->visibleColumns($sheet) : [],
             'rows' => $rows,
+            'owners' => $rows ? $this->ownerRows($rows->getCollection()) : collect(),
+            'duplicateCount' => $sheet ? $sheet->rows()->whereNotNull('duplicate_of_id')->count() : 0,
             'statusCounts' => $sheet && $tracked
                 ? $sheet->rows()->reorder()->toBase()->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status')
                 : collect(),
@@ -273,6 +279,28 @@ class KecamatanData extends Component
             'reports' => $this->kecamatan->reports()->with('uploader')->get(),
             'detail' => $this->detailId ? TargetRow::with(['sheet', 'statusFile'])->find($this->detailId) : null,
         ])->title($this->kecamatan->nama.' · '.$this->project->name);
+    }
+
+    /**
+     * Baris pemilik (di unit lain) untuk baris kembar di halaman ini: kunci => baris pemilik.
+     *
+     * @param  Collection<int, TargetRow>  $rows
+     * @return Collection<string, TargetRow>
+     */
+    private function ownerRows(Collection $rows): Collection
+    {
+        $keys = $rows->whereNotNull('duplicate_of_id')->pluck('row_key')->unique()->values();
+
+        if ($keys->isEmpty()) {
+            return collect();
+        }
+
+        return TargetRow::where('project_id', $this->project->id)
+            ->tracked()
+            ->whereIn('row_key', $keys)
+            ->with('kecamatan:id,kode,nama')
+            ->get(['id', 'kecamatan_id', 'row_key', 'status'])
+            ->keyBy('row_key');
     }
 
     /**

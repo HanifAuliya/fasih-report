@@ -35,22 +35,30 @@ class StatusReportImporter
     private array $lastParse = ['items' => 0, 'without_key' => 0, 'unknown_statuses' => [], 'sample_keys' => []];
 
     /**
-     * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}
+     * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, duplicates: int, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}
      */
     public function import(ReportFile $file, Kecamatan $unit): array
     {
         $settings = $unit->project->config();
         $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings);
 
-        $rows = TargetRow::where('kecamatan_id', $unit->id)
+        $candidates = TargetRow::where('kecamatan_id', $unit->id)
             ->whereIn('row_key', array_keys($records))
-            ->get()
-            ->groupBy('row_key');
+            ->get();
+        $rows = $candidates->whereNull('duplicate_of_id')->groupBy('row_key');
+        // Baris kembar: statusnya ikut unit pemiliknya, laporan unit ini tidak mengubahnya
+        $duplicateKeys = $candidates->whereNotNull('duplicate_of_id')->pluck('row_key')->flip();
 
         $defaultCode = $settings->statuses()->defaultCode();
-        $summary = ['records' => count($records), 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'unmatched' => 0, 'statuses' => [], 'unit' => $unit->nama, 'parse' => $this->lastParse];
+        $summary = ['records' => count($records), 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'unmatched' => 0, 'duplicates' => 0, 'statuses' => [], 'unit' => $unit->nama, 'parse' => $this->lastParse];
 
         foreach ($records as $rowKey => $record) {
+            if (! $rows->has($rowKey) && $duplicateKeys->has($rowKey)) {
+                $summary['duplicates']++;
+
+                continue;
+            }
+
             if (! $rows->has($rowKey)) {
                 $summary['unmatched']++;
 

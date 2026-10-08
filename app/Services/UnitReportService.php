@@ -69,7 +69,7 @@ class UnitReportService
                 }
 
                 // Laporan unit lain / format salah: batalkan, laporan aktif sebelumnya tetap dipakai
-                if ($result['matched'] === 0) {
+                if ($result['matched'] === 0 && $result['duplicates'] === 0) {
                     throw new RuntimeException($this->noMatchReason($result, $unit));
                 }
 
@@ -147,6 +147,7 @@ class UnitReportService
         return "{$result['records']} baris, {$result['matched']} cocok, {$result['updated']} diperbarui"
             .($result['skipped'] ? ", {$result['skipped']} dilewati" : '')
             .($result['unmatched'] ? ", {$result['unmatched']} tidak ditemukan di {$unit->nama}" : '')
+            .($result['duplicates'] ? ", {$result['duplicates']} sudah dihitung di unit lain" : '')
             .($statuses ? " · {$statuses}" : '')
             .($result['parse']['unknown_statuses'] ? ' · Diabaikan karena status belum dikenal: '.$this->unknownStatuses($result) : '');
     }
