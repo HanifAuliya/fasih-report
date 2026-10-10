@@ -182,6 +182,44 @@ class FasihOtomatisTest extends TestCase
         $this->assertSame(0, $bagian01->reports()->count());
     }
 
+    public function test_report_rows_inside_targets_match_bagian_sheet_rows(): void
+    {
+        $project = $this->createProject();
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->getCurrentSheet()->setName('Bagian 1');
+        $writer->addRow(Row::fromValues(self::HEADERS));
+        $writer->addRow(Row::fromValues(['2026-09-20', 'RIJALI HADI', 'TOKO PLASTIK', null, 'LIMPASU', 'KARAU']));
+        $writer->addRow(Row::fromValues(['2026-09-20', 'ARDIANSYAH', 'ROTI', null, 'BATU BENAWA', 'MURUNG A']));
+        $writer->addRow(Row::fromValues(['2026-09-20', 'MASRIAH', 'WARUNG', null, 'BARABAI', 'BARABAI DARAT']));
+        $writer->close();
+        $this->upload($project, UploadedFile::fake()->createWithContent('Bagian 1.xlsx', file_get_contents($path)));
+
+        // Antrean koreksi: satu assignment bisa mencakup beberapa baris Excel lewat "targets"
+        $report = UploadedFile::fake()->createWithContent('antrean-koreksi-ntb.json', json_encode([
+            'v' => 1,
+            'queue' => [
+                ['id' => '0007b130-1ff4-48e4-881c-14d9dea050ee', 'status' => 'done', 'targets' => [
+                    ['row' => 2, 'nama' => 'TOKO PLASTIK', 'old' => '100000', 'neu' => '1383850'],
+                    ['row' => 3, 'nama' => 'ROTI', 'old' => '', 'neu' => '5000'],
+                ]],
+            ],
+        ]));
+        $this->uploadReport($project, '01', $report);
+
+        $bagian = $project->kecamatans()->where('kode', '01')->sole();
+        $rows = TargetRow::where('kecamatan_id', $bagian->id)->get()->keyBy('row_key');
+
+        $this->assertSame('done', $rows['bagian 1!2']->status);
+        $this->assertSame('1383850', $rows['bagian 1!2']->result['neu']);
+        $this->assertSame('done', $rows['bagian 1!3']->status);
+        $this->assertSame('ROTI', $rows['bagian 1!3']->result['nama']);
+        $this->assertNotSame('done', $rows['bagian 1!4']->status);
+        $this->assertSame(2, $bagian->refresh()->realisasi);
+    }
+
     public function test_progress_tab_shows_recap_per_kecamatan(): void
     {
         $project = $this->createProject();

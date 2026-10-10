@@ -27,6 +27,9 @@ class StatusReportImporter
 
     private const MAX_RESULT_FIELDS = 40;
 
+    /** Penanda sheet untuk laporan yang hanya menyebut nomor baris; diganti sheet milik unit saat diterapkan. */
+    private const ANY_SHEET = '*';
+
     /**
      * Statistik pembacaan terakhir, untuk menjelaskan kenapa laporan tidak cocok.
      *
@@ -43,7 +46,7 @@ class StatusReportImporter
     public function import(ReportFile $file, Kecamatan $unit): array
     {
         $settings = $unit->project->config();
-        $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings);
+        $records = $this->forUnitSheet($this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings), $unit);
 
         $rows = TargetRow::where('kecamatan_id', $unit->id)
             ->tracked()
@@ -103,7 +106,7 @@ class StatusReportImporter
         }
 
         $settings = $owner->project->config();
-        $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings);
+        $records = $this->forUnitSheet($this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings), $owner);
         $defaultCode = $settings->statuses()->defaultCode();
         $applied = 0;
 
@@ -120,6 +123,32 @@ class StatusReportImporter
         }
 
         return $applied;
+    }
+
+    /**
+     * Kunci "*!4" (laporan tanpa nama sheet) memakai sheet file unit, mis. "bagian 1!4".
+     *
+     * @param  array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>  $records
+     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>
+     */
+    private function forUnitSheet(array $records, Kecamatan $unit): array
+    {
+        $prefix = self::ANY_SHEET.'!';
+        $anySheet = array_filter(array_keys($records), fn (string $key) => str_starts_with($key, $prefix));
+
+        if ($anySheet === []) {
+            return $records;
+        }
+
+        $sample = TargetRow::where('kecamatan_id', $unit->id)->where('row_key', 'like', '%!%')->value('row_key');
+        $sheet = $sample !== null ? strstr($sample, '!', true) : 'sheet1';
+        $resolved = [];
+
+        foreach ($records as $key => $record) {
+            $resolved[str_starts_with($key, $prefix) ? $sheet.'!'.substr($key, strlen($prefix)) : $key] = $record;
+        }
+
+        return $resolved;
     }
 
     /**
@@ -178,7 +207,7 @@ class StatusReportImporter
             }
 
             $this->lastParse['items']++;
-            $rowKey = $this->rowKey($item, $settings);
+            $rowKeys = $this->rowKeys($item, $settings);
             $rawStatus = $this->firstField($item, self::STATUS_FIELDS);
             $status = $statuses->resolve($rawStatus);
 
@@ -191,7 +220,7 @@ class StatusReportImporter
                 $status = $refined;
             }
 
-            if ($rowKey === null) {
+            if ($rowKeys === []) {
                 $this->lastParse['without_key']++;
 
                 continue;
@@ -204,19 +233,22 @@ class StatusReportImporter
                 continue;
             }
 
-            if (count($this->lastParse['sample_keys']) < 2) {
-                $this->lastParse['sample_keys'][] = $rowKey;
-            }
-
             $doneAt = $this->firstField($item, self::TIME_FIELDS);
-
-            $records[$rowKey] = [
+            $record = [
                 'status' => $status,
                 'reason' => $this->firstField($item, self::REASON_FIELDS),
                 // Waktu dari script biasanya UTC ("…Z"): simpan dalam zona waktu aplikasi (WITA)
                 'done_at' => $doneAt ? rescue(fn () => Carbon::parse($doneAt)->setTimezone(config('app.timezone')), null, false) : null,
                 'result' => $this->result($item),
             ];
+
+            foreach ($rowKeys as $rowKey => $target) {
+                if (count($this->lastParse['sample_keys']) < 2) {
+                    $this->lastParse['sample_keys'][] = $rowKey;
+                }
+
+                $records[$rowKey] = $target === [] ? $record : [...$record, 'result' => array_slice([...$record['result'], ...$target], 0, self::MAX_RESULT_FIELDS, true)];
+            }
         }
 
         return $records;
@@ -242,6 +274,40 @@ class StatusReportImporter
     }
 
     /**
+     * Kunci baris dari satu item laporan, beserta detail per baris. Item antrean bisa mewakili beberapa
+     * baris Excel sekaligus lewat "targets": [{"row": 2, "nama": …}, …].
+     *
+     * @param  array<string, mixed>  $item
+     * @return array<string, array<string, scalar>>
+     */
+    private function rowKeys(array $item, ProjectSettings $settings): array
+    {
+        $key = $this->rowKey($item, $settings);
+
+        if ($key !== null) {
+            return [$key => []];
+        }
+
+        if ($settings->keyMode() === ProjectSettings::KEY_COLUMN || ! is_array($item['targets'] ?? null)) {
+            return [];
+        }
+
+        $keys = [];
+
+        foreach ($item['targets'] as $target) {
+            if (is_array($target) && is_numeric($target['row'] ?? null)) {
+                $sheet = (string) ($target['sheet'] ?? $item['sheet'] ?? self::ANY_SHEET);
+                $keys[TargetImporter::sheetRowKey($sheet, (int) $target['row'])] = array_filter(
+                    array_diff_key($target, ['row' => 0, 'sheet' => 0, 'status' => 0]),
+                    fn ($value) => is_scalar($value) && $value !== '',
+                );
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
      * @param  array<string, mixed>  $item
      */
     private function rowKey(array $item, ProjectSettings $settings): ?string
@@ -259,7 +325,7 @@ class StatusReportImporter
         $row = $this->firstField($item, [...$settings->reportKeyFields(), 'row', 'baris_excel']);
 
         return is_numeric($row)
-            ? TargetImporter::sheetRowKey((string) ($item['sheet'] ?? 'Sheet1'), (int) $row)
+            ? TargetImporter::sheetRowKey((string) ($item['sheet'] ?? self::ANY_SHEET), (int) $row)
             : null;
     }
 
@@ -271,7 +337,7 @@ class StatusReportImporter
      */
     private function result(array $item): array
     {
-        $skip = [...self::STATUS_FIELDS, ...self::REASON_FIELDS, ...self::TIME_FIELDS, 'values', 'candidates'];
+        $skip = [...self::STATUS_FIELDS, ...self::REASON_FIELDS, ...self::TIME_FIELDS, 'values', 'candidates', 'targets'];
         $result = [];
 
         foreach ($item as $key => $value) {
