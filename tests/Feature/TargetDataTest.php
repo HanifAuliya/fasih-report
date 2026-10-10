@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\Auth\Login;
 use App\Livewire\Projects\KecamatanData;
 use App\Livewire\Projects\KecamatanTable;
 use App\Models\Kecamatan;
@@ -581,5 +582,23 @@ class TargetDataTest extends TestCase
         Artisan::shouldReceive('output')->once()->andReturn('migrated');
 
         $this->post('/_deploy', [], ['X-Deploy-Token' => 'rahasia'])->assertOk()->assertSee('migrated');
+    }
+
+    public function test_deploy_syncs_admin_account_that_can_login_with_username(): void
+    {
+        config(['fasih.deploy_token' => 'rahasia', 'fasih.admin_email' => 'admin', 'fasih.admin_password' => 'admin']);
+
+        Artisan::shouldReceive('call')->times(3);
+        Artisan::shouldReceive('output')->once()->andReturn('migrated');
+
+        $this->post('/_deploy', [], ['X-Deploy-Token' => 'rahasia'])->assertOk()->assertSee('Akun admin: admin diperbarui.');
+
+        Livewire::test(Login::class)
+            ->set('email', 'admin')
+            ->set('password', 'admin')
+            ->call('login')
+            ->assertHasNoErrors();
+
+        $this->assertAuthenticatedAs(User::where('email', 'admin')->sole());
     }
 }

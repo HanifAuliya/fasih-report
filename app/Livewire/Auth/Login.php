@@ -12,7 +12,8 @@ use Livewire\Component;
 #[Layout('layouts::guest')]
 class Login extends Component
 {
-    #[Validate('required|email')]
+    /** Email atau username (mis. "admin"); keduanya disimpan di kolom email user. */
+    #[Validate('required|string|max:255')]
     public string $email = '';
 
     #[Validate('required')]
@@ -34,7 +35,7 @@ class Login extends Component
 
         if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
             RateLimiter::hit($key);
-            $this->addError('email', 'Email atau password salah.');
+            $this->addError('email', 'Username/email atau password salah.');
 
             return;
         }

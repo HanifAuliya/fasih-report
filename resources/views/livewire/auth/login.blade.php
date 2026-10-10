@@ -8,8 +8,8 @@
 
     <form wire:submit="login" class="mt-8 space-y-5">
         <div>
-            <label class="label" for="email">Email</label>
-            <input wire:model="email" id="email" type="email" class="input h-10" placeholder="nama@email.com" autocomplete="email" autofocus>
+            <label class="label" for="email">Username atau email</label>
+            <input wire:model="email" id="email" type="text" class="input h-10" placeholder="admin" autocomplete="username" autocapitalize="none" autofocus>
             @error('email') <p class="mt-1.5 text-xs text-rose-600">{{ $message }}</p> @enderror
         </div>
 
