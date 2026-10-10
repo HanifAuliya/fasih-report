@@ -141,10 +141,29 @@ class TargetImporter
         }
 
         return [
-            'key' => $settings->keyColumn() !== null ? $sheet->columnIndex($settings->keyColumn()) : null,
+            'key' => $this->keyColumnIndex($sheet, $settings),
             'task' => $settings->taskColumn() !== null ? $sheet->columnIndex($settings->taskColumn()) : null,
             'required' => $required,
         ];
+    }
+
+    /**
+     * Kolom kunci sesuai pengaturan; bila tidak ada di file ini, coba nama kolom kunci yang umum
+     * (mis. pengaturan "link" tapi file memakai "assignment_id" / "link_fasih").
+     */
+    private function keyColumnIndex(TargetSheet $sheet, ProjectSettings $settings): ?int
+    {
+        if ($settings->keyMode() !== ProjectSettings::KEY_COLUMN) {
+            return null;
+        }
+
+        foreach (array_filter([$settings->keyColumn(), ...ProjectSettings::COMMON_KEY_COLUMNS]) as $name) {
+            if (($index = $sheet->columnIndex($name)) !== null) {
+                return $index;
+            }
+        }
+
+        return null;
     }
 
     /**

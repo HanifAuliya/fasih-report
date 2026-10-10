@@ -19,6 +19,9 @@ class ProjectSettings
     /** Baris dicocokkan lewat sheet + nomor baris Excel. */
     public const KEY_ROW = 'row';
 
+    /** Nama kolom kunci yang umum di Excel FASIH, dicoba bila kolom kunci pengaturan tidak ada di file. */
+    public const COMMON_KEY_COLUMNS = ['assignment_id', 'link_fasih', 'link'];
+
     public const DEFAULTS = [
         'unit_label' => 'Kecamatan',
         'unit_source' => self::UNIT_KECAMATAN,

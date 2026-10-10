@@ -212,6 +212,32 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame(3, $unit->refresh()->target);
     }
 
+    public function test_common_key_column_is_used_when_configured_key_column_is_missing(): void
+    {
+        // Pengaturan bawaan "link", tapi file NTB memakai assignment_id & link_fasih
+        $project = $this->createProject();
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValues(['nama_kab', 'Nama usaha', 'assignment_id', 'link_fasih', 'Selesai']));
+        $writer->addRow(Row::fromValues(['Hulu Sungai Tengah', 'PLN UP3 BARABAI', self::UUID_A, 'https://fasih-sm.bps.go.id/app/assignment/x/'.self::UUID_A, '']));
+        $writer->addRow(Row::fromValues(['Hulu Sungai Tengah', 'RSUD DAMANHURI', self::UUID_B, 'https://fasih-sm.bps.go.id/app/assignment/x/'.self::UUID_B, '']));
+        $writer->close();
+
+        $this->upload($project, UploadedFile::fake()->createWithContent('Bagian 1.xlsx', file_get_contents($path)));
+        $this->assertSame(2, $project->kecamatans()->sole()->target);
+
+        $this->uploadReport($project, UploadedFile::fake()->createWithContent('antrean-koreksi-ntb.json', json_encode(['queue' => [
+            ['id' => self::UUID_A, 'status' => 'done'],
+            ['id' => self::UUID_B, 'status' => 'already'],
+        ]])));
+
+        $this->assertSame('done', TargetRow::firstWhere('row_key', self::UUID_A)->status);
+        $this->assertSame('unchanged', TargetRow::firstWhere('row_key', self::UUID_B)->status);
+        $this->assertSame(2, $project->kecamatans()->sole()->realisasi);
+    }
+
     public function test_csv_report_with_custom_statuses_updates_progress_and_recap(): void
     {
         $project = $this->createProject();
