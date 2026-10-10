@@ -55,7 +55,7 @@ class UnitStatusJsonController extends Controller
             'queue' => $queue,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        $scope = $unit ? $unit->kode.'_'.str($unit->nama)->slug('_') : 'gabungan';
+        $scope = $unit ? str($unit->nama)->slug('_') : 'gabungan';
         $filename = sprintf('%s_%s_status_%s.json', str($project->name)->slug('_'), $scope, now()->format('Ymd-Hi'));
 
         return response($json, 200, [

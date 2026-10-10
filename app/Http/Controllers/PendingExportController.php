@@ -89,7 +89,7 @@ class PendingExportController extends Controller
 
         $writer->close();
 
-        $scope = $kode !== null ? $units->first()->kode.'_'.str($units->first()->nama)->slug('_') : 'semua';
+        $scope = $kode !== null ? str($units->first()->nama)->slug('_') : 'semua';
         $filename = sprintf('%s_%s_belum_selesai_%s.xlsx', str($project->name)->slug('_'), $scope, now()->format('Ymd-Hi'));
 
         return response()->download($path, $filename)->deleteFileAfterSend();

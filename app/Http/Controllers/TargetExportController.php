@@ -28,7 +28,7 @@ class TargetExportController extends Controller
 
         abort_if($sheets->isEmpty(), 404);
 
-        $filename = sprintf('%s_%s_%s_%s.xlsx', str($project->name)->slug('_'), $kecamatan->kode, str($kecamatan->nama)->slug('_'), now()->format('Ymd-Hi'));
+        $filename = sprintf('%s_%s_%s.xlsx', str($project->name)->slug('_'), str($kecamatan->nama)->slug('_'), now()->format('Ymd-Hi'));
 
         // Utamakan file Excel asli (format tetap utuh); bila tidak tersedia, bangun ulang dari data tersimpan
         if ($path = $originalExporter->export($kecamatan)) {
