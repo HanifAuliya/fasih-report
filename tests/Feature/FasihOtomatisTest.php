@@ -182,6 +182,30 @@ class FasihOtomatisTest extends TestCase
         $this->assertSame(0, $bagian01->reports()->count());
     }
 
+    public function test_summary_sheet_next_to_data_sheet_is_not_counted(): void
+    {
+        $project = $this->createProject();
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValues(self::HEADERS));
+        $writer->addRow(Row::fromValues(['2026-09-20', 'RIJALI HADI', 'TOKO', null, 'LIMPASU', 'KARAU']));
+        $writer->addRow(Row::fromValues(['2026-09-20', 'ARDIANSYAH', 'ROTI', null, 'BARABAI', 'BARABAI DARAT']));
+        $writer->addNewSheetAndMakeItCurrent()->setName('Rekap');
+        $writer->addRow(Row::fromValues(['Keterangan', 'Jumlah']));
+        $writer->addRow(Row::fromValues(['Sudah terkirim', 572]));
+        $writer->addRow(Row::fromValues(['Belum terkirim', 49]));
+        $writer->close();
+        $this->upload($project, UploadedFile::fake()->createWithContent('Rekap terkirim baris 1-622.xlsx', file_get_contents($path)));
+
+        $unit = $project->kecamatans()->sole();
+
+        $this->assertSame(2, $unit->target);
+        $this->assertSame(2, TargetRow::where('kecamatan_id', $unit->id)->tracked()->count());
+        $this->assertFalse($unit->targetSheets()->where('name', 'Rekap')->sole()->tracked);
+    }
+
     public function test_report_rows_inside_targets_match_bagian_sheet_rows(): void
     {
         $project = $this->createProject();

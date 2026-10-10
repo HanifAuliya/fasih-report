@@ -45,7 +45,9 @@ class TargetImporter
         $owners = $this->ownersElsewhere($kecamatan);
         $summary = ['sheets' => 0, 'rows' => 0, 'tracked' => 0, 'kept' => 0, 'not_ready' => 0, 'duplicates' => []];
 
-        DB::transaction(function () use ($sheets, $kecamatan, $file, $settings, $previous, $owners, &$summary) {
+        $hasDataSheet = collect($sheets)->contains(fn (array $sheet) => $this->hasKnownColumns(new TargetSheet(['headers' => $sheet['headers']]), $settings));
+
+        DB::transaction(function () use ($sheets, $kecamatan, $file, $settings, $previous, $owners, $hasDataSheet, &$summary) {
             $kecamatan->targetSheets()->delete();
             $now = now();
 
@@ -59,8 +61,7 @@ class TargetImporter
                 ]);
 
                 $columns = $this->matchingColumns($targetSheet, $settings);
-                $targetSheet->tracked = count($sheet['rows']) > 0
-                    && ($settings->keyMode() === ProjectSettings::KEY_ROW || $columns['key'] !== null);
+                $targetSheet->tracked = $this->isTrackable($targetSheet, $settings, $columns, $hasDataSheet);
                 $targetSheet->save();
 
                 $records = [];
@@ -219,6 +220,38 @@ class TargetImporter
     }
 
     /**
+     * Sheet dilacak bila berisi baris dan bisa diberi kunci. Pada mode nomor baris, sheet tanpa satu pun kolom
+     * yang dikenal pengaturan (mis. sheet "Rekap" berisi ringkasan) dilewati, selama file ini punya sheet data lain.
+     *
+     * @param  array{key: ?int}  $columns
+     */
+    private function isTrackable(TargetSheet $sheet, ProjectSettings $settings, array $columns, bool $hasDataSheet): bool
+    {
+        if ((int) $sheet->row_count === 0) {
+            return false;
+        }
+
+        if ($settings->keyMode() === ProjectSettings::KEY_COLUMN) {
+            return $columns['key'] !== null;
+        }
+
+        return ! $hasDataSheet || $this->hasKnownColumns($sheet, $settings);
+    }
+
+    private function hasKnownColumns(TargetSheet $sheet, ProjectSettings $settings): bool
+    {
+        $known = array_filter([$settings->recapColumn(), $settings->initialStatusColumn(), ...$settings->displayColumns()]);
+
+        foreach ($known as $name) {
+            if ($sheet->columnIndex($name) !== null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Hitung ulang kunci baris dari isi baris yang sudah tersimpan, sesuai pengaturan sekarang
      * (mis. setelah cara pencocokan diganti dari nomor baris ke kolom link). Tidak butuh file Excel.
      *
@@ -230,11 +263,12 @@ class TargetImporter
         $owners = $this->ownersElsewhere($kecamatan);
         $changed = 0;
 
-        foreach ($kecamatan->targetSheets()->get() as $sheet) {
+        $sheets = $kecamatan->targetSheets()->get();
+        $hasDataSheet = $sheets->contains(fn (TargetSheet $sheet) => $this->hasKnownColumns($sheet, $settings));
+
+        foreach ($sheets as $sheet) {
             $columns = $this->matchingColumns($sheet, $settings);
-            $sheet->update([
-                'tracked' => $sheet->row_count > 0 && ($settings->keyMode() === ProjectSettings::KEY_ROW || $columns['key'] !== null),
-            ]);
+            $sheet->update(['tracked' => $this->isTrackable($sheet, $settings, $columns, $hasDataSheet)]);
 
             TargetRow::where('target_sheet_id', $sheet->id)
                 ->select(['id', 'row_number', 'row_key', 'duplicate_of_id', 'not_ready', 'cells'])
