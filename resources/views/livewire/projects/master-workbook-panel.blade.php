@@ -45,7 +45,7 @@
                 </div>
             </div>
 
-            <div wire:loading wire:target="masterUpload" class="mt-3 text-xs text-slate-500">Mengunggah file…</div>
+            <x-upload-status upload="masterUpload" process="uploadMaster" process-label="Menyimpan file induk…" class="mt-3" />
             @if ($masterUpload)
                 <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
                     <span class="truncate">{{ $masterUpload->getClientOriginalName() }}</span>

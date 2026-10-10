@@ -182,6 +182,29 @@ class FasihOtomatisTest extends TestCase
         $this->assertSame(0, $bagian01->reports()->count());
     }
 
+    public function test_row_number_reports_never_spill_into_other_bagian(): void
+    {
+        $project = $this->createProject();
+        $this->seedBagians($project);
+
+        $this->uploadReport($project, '02', UploadedFile::fake()->createWithContent('bagian-02.json', json_encode(['queue' => [
+            ['id' => 'Sheet1!2', 'status' => 'done', 'doneAt' => '2026-10-02T03:00:00Z'],
+            ['id' => 'Sheet1!3', 'status' => 'done', 'doneAt' => '2026-10-02T03:00:00Z'],
+            ['id' => 'Sheet1!9', 'status' => 'done', 'doneAt' => '2026-10-02T03:00:00Z'],
+        ]])));
+        $this->uploadReport($project, '01', UploadedFile::fake()->createWithContent('bagian-01.json', json_encode(['queue' => [
+            ['id' => 'Sheet1!2', 'status' => 'red', 'doneAt' => '2026-10-01T03:00:00Z'],
+        ]])));
+
+        $bagian01 = $project->kecamatans()->where('kode', '01')->sole();
+        $bagian02 = $project->kecamatans()->where('kode', '02')->sole();
+
+        $this->assertSame('red', TargetRow::where('kecamatan_id', $bagian01->id)->where('row_key', 'sheet1!2')->sole()->status);
+        $this->assertSame('pending', TargetRow::where('kecamatan_id', $bagian01->id)->where('row_key', 'sheet1!3')->sole()->status);
+        $this->assertSame(2, $bagian02->refresh()->realisasi);
+        $this->assertSame(0, $bagian01->refresh()->realisasi);
+    }
+
     public function test_summary_sheet_next_to_data_sheet_is_not_counted(): void
     {
         $project = $this->createProject();

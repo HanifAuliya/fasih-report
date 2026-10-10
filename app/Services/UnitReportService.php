@@ -73,12 +73,16 @@ class UnitReportService
                     throw new RuntimeException($this->noMatchReason($result, $unit));
                 }
 
-                // Hasil laporan unit lain untuk baris milik unit ini (diteruskan) dipasang lagi setelah reset
-                $unit->project->kecamatans()->whereKeyNot($unit->id)->get()->each(function (Kecamatan $other) use ($unit) {
-                    if ($report = $other->reports()->where('is_active', true)->first()) {
-                        $this->statusImporter->applyTo($report, $unit);
-                    }
-                });
+                // Hasil laporan unit lain untuk baris milik unit ini (diteruskan) dipasang lagi setelah reset;
+                // hanya untuk kolom kunci, karena nomor baris tidak pernah diteruskan antar unit
+                if ($unit->project->config()->keyMode() === ProjectSettings::KEY_COLUMN) {
+                    ReportFile::query()
+                        ->where('project_id', $unit->project_id)
+                        ->where('kecamatan_id', '!=', $unit->id)
+                        ->where('is_active', true)
+                        ->get()
+                        ->each(fn (ReportFile $report) => $this->statusImporter->applyTo($report, $unit));
+                }
 
                 return $this->describe($result, $unit);
             });

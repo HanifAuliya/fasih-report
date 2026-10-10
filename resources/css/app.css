@@ -347,3 +347,23 @@ textarea.input {
     font-size: 0.875rem;
     font-weight: 500;
 }
+
+/* Bar "sedang diproses" (komponen upload-status): potongan bar bergerak bolak-balik */
+@keyframes upload-indeterminate {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(300%);
+    }
+}
+
+.upload-indeterminate {
+    animation: upload-indeterminate 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .upload-indeterminate {
+        animation-duration: 3s;
+    }
+}

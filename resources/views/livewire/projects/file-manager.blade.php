@@ -134,7 +134,7 @@
                         <input type="file" wire:model="uploads" multiple class="absolute inset-0 cursor-pointer opacity-0">
                     </label>
 
-                    <div wire:loading wire:target="uploads" class="text-xs text-brand-600">Mengunggah…</div>
+                    <x-upload-status upload="uploads" process="saveUploads" process-label="Menyimpan & memproses file…" />
                     @error('uploads') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
                     @error('uploads.*') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
 

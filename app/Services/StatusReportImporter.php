@@ -53,7 +53,9 @@ class StatusReportImporter
             ->whereIn('row_key', array_keys($records))
             ->get()
             ->groupBy('row_key');
-        $elsewhere = TargetRow::where('project_id', $unit->project_id)
+        // Hanya kunci yang unik di seluruh pekerjaan (kolom kunci) yang bisa diteruskan; nomor baris
+        // ("sheet1!5") ada di setiap Bagian, jadi laporan per nomor baris hanya berlaku untuk unit ini
+        $elsewhere = $settings->keyMode() !== ProjectSettings::KEY_COLUMN ? collect() : TargetRow::where('project_id', $unit->project_id)
             ->where('kecamatan_id', '!=', $unit->id)
             ->tracked()
             ->whereIn('row_key', array_diff(array_keys($records), $rows->keys()->all()))

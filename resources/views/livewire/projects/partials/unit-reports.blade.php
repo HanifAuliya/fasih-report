@@ -112,8 +112,7 @@
                     <input type="file" wire:model="reportUpload" accept=".json,.csv" class="absolute inset-0 cursor-pointer opacity-0">
                 </label>
 
-                <div wire:loading wire:target="reportUpload" class="text-xs text-brand-600">Mengunggah…</div>
-                <div wire:loading wire:target="uploadReport" class="text-xs text-brand-600">Menerapkan laporan…</div>
+                <x-upload-status upload="reportUpload" process="uploadReport" process-label="Menerapkan laporan…" />
                 @error('reportUpload') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
             </div>
             <div class="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">

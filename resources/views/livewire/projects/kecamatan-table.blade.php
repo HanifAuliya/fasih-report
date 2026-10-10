@@ -274,8 +274,7 @@
                         <input type="file" wire:model="uploads" multiple accept=".xlsx" class="absolute inset-0 cursor-pointer opacity-0">
                     </label>
 
-                    <div wire:loading wire:target="uploads" class="text-xs text-brand-600">Mengunggah…</div>
-                    <div wire:loading wire:target="saveUploads" class="text-xs text-brand-600">Memproses data…</div>
+                    <x-upload-status upload="uploads" process="saveUploads" process-label="Memproses Excel…" class="space-y-2" />
                     @error('uploads') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
                     @error('uploads.*') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
 
