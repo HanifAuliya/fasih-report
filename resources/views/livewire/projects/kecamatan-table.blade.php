@@ -151,8 +151,11 @@
                             @endif
                             @if ($kec->tracked_rows_count)
                                 @if ($activeReport = $kec->reports->first())
-                                    <p class="mt-0.5 flex max-w-xs items-center gap-1 text-xs text-emerald-700" title="Laporan aktif: {{ $activeReport->original_name }}">
+                                    <p class="mt-0.5 flex max-w-xs items-center gap-1 text-xs text-emerald-700" title="Rangkuman {{ $kec->reports->count() }} laporan, terbaru: {{ $activeReport->original_name }}">
                                         <x-icon name="check" class="size-3 shrink-0" />
+                                        @if ($kec->reports->count() > 1)
+                                            <span class="shrink-0 font-medium">{{ $kec->reports->count() }} laporan ·</span>
+                                        @endif
                                         <span class="truncate">{{ $activeReport->original_name }}</span>
                                         <span class="shrink-0 text-slate-400">· {{ $activeReport->created_at->diffForHumans() }}</span>
                                     </p>

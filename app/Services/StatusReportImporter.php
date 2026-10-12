@@ -244,7 +244,7 @@ class StatusReportImporter
             'status' => $record['status'],
             'reason' => $record['reason'],
             'result' => $record['result'] ?: null,
-            'status_at' => $record['done_at'] ?? now(),
+            'status_at' => $record['done_at'] ?? $file->created_at ?? now(),
             'status_file_id' => $file->id,
         ]);
 

@@ -216,7 +216,7 @@ class KecamatanData extends Component
             return;
         }
 
-        $this->reportChanged($file->is_active ? 'Laporan aktif: '.$file->original_name : $file->summary, $file->is_active);
+        $this->reportChanged($file->is_active ? 'Laporan ditambahkan ke rangkuman: '.$file->original_name : $file->summary, $file->is_active);
     }
 
     public function activateReport(int $id, UnitReportService $unitReports): void
@@ -226,7 +226,17 @@ class KecamatanData extends Component
         $file = $this->kecamatan->reports()->findOrFail($id);
         $summary = $unitReports->activate($file);
 
-        $this->reportChanged($file->refresh()->is_active ? 'Laporan aktif: '.$file->original_name : $summary, $file->is_active);
+        $this->reportChanged($file->refresh()->is_active ? 'Laporan dipakai lagi: '.$file->original_name : $summary, $file->is_active);
+    }
+
+    public function deactivateReport(int $id, UnitReportService $unitReports): void
+    {
+        $this->authorize('manage');
+
+        $file = $this->kecamatan->reports()->findOrFail($id);
+        $unitReports->deactivate($file);
+
+        $this->reportChanged('Laporan dilepas dari rangkuman: '.$file->original_name);
     }
 
     public function deleteReport(int $id, UnitReportService $unitReports): void

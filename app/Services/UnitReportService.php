@@ -56,7 +56,10 @@ class UnitReportService
     }
 
     /**
-     * Jadikan laporan ini aktif: status unit di-reset ke status awal Excel, lalu laporan diterapkan.
+     * Pakai laporan ini: status unit dihitung ulang dari Excel awal + SEMUA laporan aktif unit itu, urut dari yang
+     * paling lama diupload sampai yang terbaru (hasil yang lebih baru menimpa yang lama, baris yang tidak ada di
+     * laporan baru tetap memakai hasil laporan sebelumnya). Laporan yang tidak cocok sama sekali ditolak dan
+     * status unit tetap seperti sebelumnya.
      */
     public function activate(ReportFile $file): string
     {
@@ -64,36 +67,23 @@ class UnitReportService
 
         try {
             $summary = DB::transaction(function () use ($file, $unit) {
-                $unit->reports()->where('id', '!=', $file->id)->update(['is_active' => false]);
-                $this->targetImporter->resetStatuses($unit);
-                $result = $this->statusImporter->import($file, $unit);
+                $file->update(['is_active' => true]);
+                $result = $this->rebuild($unit, $file);
 
                 // Kunci baris mungkin masih dari pengaturan lama: hitung ulang lalu coba sekali lagi
                 if ($result['matched'] === 0 && $result['records'] > 0 && $this->targetImporter->rekey($unit) > 0) {
-                    $this->targetImporter->resetStatuses($unit);
-                    $result = $this->statusImporter->import($file, $unit);
+                    $result = $this->rebuild($unit, $file);
                 }
 
-                // Laporan unit lain / format salah: batalkan, laporan aktif sebelumnya tetap dipakai
+                // Laporan unit lain / format salah: batalkan, status unit tetap dari laporan yang sudah ada
                 if ($result['matched'] === 0 && $result['forwarded'] === []) {
                     throw new RuntimeException($this->noMatchReason($result, $unit));
-                }
-
-                // Hasil laporan unit lain untuk baris milik unit ini (diteruskan) dipasang lagi setelah reset;
-                // hanya untuk kolom kunci, karena nomor baris tidak pernah diteruskan antar unit
-                if ($unit->project->config()->keyMode() === ProjectSettings::KEY_COLUMN) {
-                    ReportFile::query()
-                        ->where('project_id', $unit->project_id)
-                        ->where('kecamatan_id', '!=', $unit->id)
-                        ->where('is_active', true)
-                        ->get()
-                        ->each(fn (ReportFile $report) => $this->statusImporter->applyTo($report, $unit));
                 }
 
                 return $this->describe($result, $unit);
             });
 
-            $file->update(['is_active' => true, 'summary' => $summary]);
+            $file->update(['summary' => $summary]);
         } catch (Throwable $e) {
             report($e);
             $summary = 'Gagal diproses: '.$e->getMessage();
@@ -104,8 +94,19 @@ class UnitReportService
     }
 
     /**
-     * Hapus laporan. Jika laporan aktif yang dihapus, laporan sebelumnya otomatis jadi aktif
-     * (atau status kembali ke awal jika tidak ada laporan lain).
+     * Lepas laporan dari rangkuman: status unit dihitung ulang tanpa laporan ini (file tetap di riwayat).
+     */
+    public function deactivate(ReportFile $file): void
+    {
+        $file->update(['is_active' => false]);
+
+        if ($file->kecamatan) {
+            DB::transaction(fn () => $this->rebuild($file->kecamatan));
+        }
+    }
+
+    /**
+     * Hapus laporan; bila ikut rangkuman, status unit dihitung ulang dari laporan yang tersisa.
      */
     public function delete(ReportFile $file): void
     {
@@ -115,39 +116,54 @@ class UnitReportService
         $file->delete();
 
         if ($unit && $wasActive) {
-            $this->restoreActive($unit);
+            DB::transaction(fn () => $this->rebuild($unit));
         }
     }
 
     /**
-     * Terapkan ulang laporan aktif unit (dipakai setelah Excel/pengaturan diproses ulang).
+     * Terapkan ulang semua laporan aktif unit (dipakai setelah Excel/pengaturan diproses ulang).
      */
     public function reapply(Kecamatan $unit): ?string
     {
-        $active = $unit->reports()->where('is_active', true)->first();
+        $count = $unit->reports()->where('is_active', true)->count();
 
-        if ($active) {
-            return $this->activate($active);
-        }
+        DB::transaction(fn () => $this->rebuild($unit));
 
-        $this->targetImporter->resetStatuses($unit);
-
-        return null;
+        return $count > 0 ? "{$count} laporan diterapkan ulang" : null;
     }
 
-    private function restoreActive(Kecamatan $unit): void
+    /**
+     * Status unit = status awal Excel + semua laporan aktifnya (terlama dulu), lalu hasil laporan unit lain
+     * untuk baris milik unit ini (diteruskan; hanya kolom kunci, nomor baris tidak pernah diteruskan).
+     *
+     * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, forwarded: array<string, int>, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}|null hasil penerapan $focus
+     */
+    private function rebuild(Kecamatan $unit, ?ReportFile $focus = null): ?array
     {
-        $previous = $unit->reports()
-            ->where(fn ($query) => $query->whereNull('summary')->orWhere('summary', 'not like', 'Gagal%'))
-            ->first();
+        $this->targetImporter->resetStatuses($unit);
+        $result = null;
 
-        if ($previous) {
-            $this->activate($previous);
-
-            return;
+        foreach ($unit->reports()->where('is_active', true)->reorder('id')->get() as $report) {
+            if ($focus !== null && $report->is($focus)) {
+                $result = $this->statusImporter->import($report, $unit);
+            } else {
+                $this->statusImporter->applyTo($report, $unit);
+            }
         }
 
-        $this->targetImporter->resetStatuses($unit);
+        if ($unit->project->config()->keyMode() === ProjectSettings::KEY_COLUMN) {
+            ReportFile::query()
+                ->where('project_id', $unit->project_id)
+                ->where('kecamatan_id', '!=', $unit->id)
+                ->where('is_active', true)
+                ->orderBy('id')
+                ->get()
+                ->each(fn (ReportFile $report) => $this->statusImporter->applyTo($report, $unit));
+        }
+
+        $unit->syncProgressFromTargets();
+
+        return $result;
     }
 
     /**

@@ -172,42 +172,58 @@ class TargetDataTest extends TestCase
         $this->assertSame('OSS ganda', $project->refresh()->config()->statuses()->label('ganda'));
     }
 
-    public function test_newest_report_is_active_and_older_report_can_be_reactivated(): void
+    public function test_all_reports_are_combined_and_newer_results_win(): void
     {
         $this->upload($this->targetWorkbook());
-        $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'yellow'], ['id' => 'bbb-2', 'status' => 'pending']], 'pertama.json'));
+        $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'yellow'], ['id' => 'bbb-2', 'status' => 'linked']], 'pertama.json'));
+        // Laporan kedua hanya berisi baris yang belum selesai
         $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'linked'], ['id' => 'ccc-3', 'status' => 'red']], 'kedua.json'));
 
         $reports = $this->haruyan()->reports()->get();
         $this->assertSame(['kedua.json', 'pertama.json'], $reports->pluck('original_name')->all());
-        $this->assertSame([true, false], $reports->pluck('is_active')->all());
-        $this->assertSame('linked', TargetRow::firstWhere('row_key', 'aaa-1')->status);
+        $this->assertSame([true, true], $reports->pluck('is_active')->all());
+        $this->assertSame('linked', TargetRow::firstWhere('row_key', 'aaa-1')->status, 'hasil laporan baru menimpa');
+        $this->assertSame('linked', TargetRow::firstWhere('row_key', 'bbb-2')->status, 'hasil laporan lama tetap dipakai');
         $this->assertSame('red', TargetRow::firstWhere('row_key', 'ccc-3')->status);
-        $this->assertSame(1, $this->haruyan()->realisasi);
+        $this->assertSame(2, $this->haruyan()->realisasi);
 
-        // Kembali ke laporan pertama: status dihitung ulang dari Excel awal + laporan pertama saja
-        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
-            ->call('activateReport', $reports->last()->id);
+        // Lepas laporan kedua: kembali ke Excel awal + laporan pertama
+        $component = Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010']);
+        $component->call('deactivateReport', $reports->first()->id);
 
         $this->assertSame('yellow', TargetRow::firstWhere('row_key', 'aaa-1')->status);
-        $this->assertSame('moved', TargetRow::firstWhere('row_key', 'bbb-2')->status);
         $this->assertSame('pending', TargetRow::firstWhere('row_key', 'ccc-3')->status);
-        $this->assertSame(0, $this->haruyan()->realisasi);
-        $this->assertTrue($reports->last()->refresh()->is_active);
+        $this->assertSame(1, $this->haruyan()->realisasi);
         $this->assertFalse($reports->first()->refresh()->is_active);
+
+        // Pakai lagi: masuk rangkuman sesuai urutan upload, jadi tetap menimpa laporan pertama
+        $component->call('activateReport', $reports->first()->id);
+
+        $this->assertSame('linked', TargetRow::firstWhere('row_key', 'aaa-1')->status);
+        $this->assertSame(2, $this->haruyan()->realisasi);
     }
 
-    public function test_deleting_active_report_restores_previous_one(): void
+    public function test_older_result_in_newer_upload_does_not_overwrite_newer_result(): void
+    {
+        $this->upload($this->targetWorkbook());
+        $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'linked', 'doneAt' => '2026-10-05T03:00:00Z']], 'baru.json'));
+        $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'red', 'doneAt' => '2026-10-01T03:00:00Z'], ['id' => 'bbb-2', 'status' => 'closed']], 'lama.json'));
+
+        $this->assertSame('linked', TargetRow::firstWhere('row_key', 'aaa-1')->status);
+        $this->assertSame('closed', TargetRow::firstWhere('row_key', 'bbb-2')->status);
+    }
+
+    public function test_deleting_report_recomputes_from_remaining_reports(): void
     {
         $this->upload($this->targetWorkbook());
         $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'closed']], 'pertama.json'));
         $this->uploadReport($this->jsonReport([['id' => 'aaa-1', 'status' => 'red']], 'kedua.json'));
+        $this->assertSame('red', TargetRow::firstWhere('row_key', 'aaa-1')->status);
 
         $component = Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010']);
         $component->call('deleteReport', $this->haruyan()->reports()->first()->id);
 
         $this->assertSame(['pertama.json'], $this->haruyan()->reports()->pluck('original_name')->all());
-        $this->assertTrue($this->haruyan()->reports()->first()->is_active);
         $this->assertSame('closed', TargetRow::firstWhere('row_key', 'aaa-1')->status);
 
         $component->call('deleteReport', $this->haruyan()->reports()->first()->id);
@@ -249,7 +265,7 @@ class TargetDataTest extends TestCase
         $this->get(route('projects.kecamatan', [$this->project(), '010']))
             ->assertOk()
             ->assertSee('haruyan.json')
-            ->assertSee('Aktif')
+            ->assertSee('Dipakai')
             ->assertDontSee('Upload JSON');
         $this->get(route('files.download', $report))
             ->assertOk()

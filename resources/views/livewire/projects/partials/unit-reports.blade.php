@@ -1,5 +1,6 @@
 @php
-    $activeReport = $reports->firstWhere('is_active', true);
+    $activeReports = $reports->where('is_active', true);
+    $activeReport = $activeReports->first();
     $unitName = $kecamatan->nama;
 @endphp
 
@@ -13,10 +14,10 @@
             <p class="text-[13px] font-semibold text-slate-900">Laporan JSON</p>
             <p class="truncate text-xs text-slate-500">
                 @if ($activeReport)
-                    Aktif: <span class="font-medium text-emerald-700">{{ $activeReport->original_name }}</span>
-                    · {{ $activeReport->created_at->translatedFormat('d M Y H:i') }}
+                    Rangkuman <span class="font-medium text-emerald-700">{{ $activeReports->count() }} laporan</span>
+                    · terbaru {{ $activeReport->original_name }} ({{ $activeReport->created_at->translatedFormat('d M Y H:i') }})
                 @else
-                    Belum ada laporan aktif, status masih dari Excel awal.
+                    Belum ada laporan, status masih dari Excel awal.
                 @endif
             </p>
         </div>
@@ -53,7 +54,7 @@
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="truncate text-sm font-medium text-slate-900">{{ $report->original_name }}</span>
                             @if ($report->is_active)
-                                <span class="badge bg-emerald-600 text-white">Aktif</span>
+                                <span class="badge bg-emerald-600 text-white">Dipakai</span>
                             @elseif ($failed)
                                 <span class="badge bg-rose-50 text-rose-700 ring-1 ring-rose-600/20">Gagal</span>
                             @endif
@@ -73,13 +74,18 @@
                             <x-icon name="download" class="size-3.5" /> Download
                         </a>
                         @can('manage')
-                            @unless ($report->is_active)
-                                <button type="button" x-on:click="$confirm({{ \Illuminate\Support\Js::from('Jadikan '.($report->original_name).' sebagai laporan aktif? Status '.($unitName).' akan dihitung ulang dari laporan ini (perubahan manual akan hilang).') }}, () => $wire.activateReport({{ $report->id }}), {})"
-                                    class="btn-secondary py-1.5 text-xs">
-                                    <x-icon name="check" class="size-3.5" /> Jadikan aktif
+                            @if ($report->is_active)
+                                <button type="button" x-on:click="$confirm({{ \Illuminate\Support\Js::from('Lepas '.($report->original_name).' dari rangkuman? Status '.($unitName).' dihitung ulang dari laporan lain (perubahan manual akan hilang).') }}, () => $wire.deactivateReport({{ $report->id }}), {})"
+                                    class="btn-secondary py-1.5 text-xs" title="Tidak dipakai di rangkuman, file tetap di riwayat">
+                                    <x-icon name="x" class="size-3.5" /> Lepas
                                 </button>
-                            @endunless
-                            <button type="button" x-on:click="$confirm({{ \Illuminate\Support\Js::from('Hapus '.($report->original_name).'?'.($report->is_active ? ' Laporan sebelumnya akan jadi aktif.' : '')) }}, () => $wire.deleteReport({{ $report->id }}), { danger: true, confirm: 'Ya, hapus' })"
+                            @else
+                                <button type="button" x-on:click="$confirm({{ \Illuminate\Support\Js::from('Pakai lagi '.($report->original_name).' di rangkuman '.($unitName).'? Status dihitung ulang dari semua laporan yang dipakai (perubahan manual akan hilang).') }}, () => $wire.activateReport({{ $report->id }}), {})"
+                                    class="btn-secondary py-1.5 text-xs">
+                                    <x-icon name="check" class="size-3.5" /> Pakai lagi
+                                </button>
+                            @endif
+                            <button type="button" x-on:click="$confirm({{ \Illuminate\Support\Js::from('Hapus '.($report->original_name).'?'.($report->is_active ? ' Status dihitung ulang dari laporan yang tersisa.' : '')) }}, () => $wire.deleteReport({{ $report->id }}), { danger: true, confirm: 'Ya, hapus' })"
                                 class="btn-icon hover:text-rose-600" title="Hapus laporan">
                                 <x-icon name="trash" class="size-4" />
                             </button>
@@ -96,8 +102,8 @@
         <form wire:submit="uploadReport">
             <div class="space-y-4 p-5">
                 <p class="text-sm text-slate-600">
-                    Laporan hanya diterapkan ke baris <b>{{ $unitName }}</b> dan langsung jadi laporan aktif.
-                    Jika tidak ada baris yang cocok, laporan ditolak dan laporan aktif sebelumnya tetap dipakai.
+                    Laporan <b>ditambahkan ke rangkuman</b> {{ $unitName }}: hasilnya menimpa hasil laporan lama untuk baris yang sama,
+                    baris lain tetap memakai hasil laporan sebelumnya. Jika tidak ada baris yang cocok, laporan ditolak.
                 </p>
 
                 <label class="relative flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed border-slate-300 px-6 py-8 text-center transition hover:border-slate-400">
