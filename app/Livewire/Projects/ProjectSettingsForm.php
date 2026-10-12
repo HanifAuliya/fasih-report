@@ -183,6 +183,7 @@ class ProjectSettingsForm extends Component
             'key_mode' => $config->keyMode(),
             'key_column' => $config->keyColumn(),
             'key_detail_column' => $config->keyDetailColumn(),
+            'recap_column' => $config->recapColumn(),
             'report_key_fields' => $config->reportKeyFields(),
             'initial_status_column' => $config->initialStatusColumn(),
             'task_column' => $config->taskColumn(),

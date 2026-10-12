@@ -63,6 +63,7 @@ class TargetImporter
                 $columns = $this->matchingColumns($targetSheet, $settings);
                 $targetSheet->tracked = $this->isTrackable($targetSheet, $settings, $columns, $hasDataSheet);
                 $targetSheet->save();
+                $recapIndex = $this->recapIndex($targetSheet, $settings);
 
                 $records = [];
 
@@ -97,6 +98,7 @@ class TargetImporter
                         'row_key' => $rowKey,
                         'duplicate_of_id' => $duplicateOf,
                         'not_ready' => $notReady,
+                        'recap' => self::recapValue($cells, $recapIndex),
                         'cells' => json_encode($cells, JSON_UNESCAPED_UNICODE),
                         ...$state,
                         'created_at' => $now,
@@ -301,7 +303,51 @@ class TargetImporter
                 });
         }
 
+        $this->refreshRecap($kecamatan);
+
         return $changed;
+    }
+
+    /**
+     * Isi ulang kolom rekap tiap baris unit dari Excel-nya (setelah kolom rekap di pengaturan diganti).
+     * Baris dikelompokkan per nilai supaya cukup beberapa query UPDATE.
+     */
+    public function refreshRecap(Kecamatan $kecamatan): void
+    {
+        $settings = $kecamatan->project->config();
+        $indexes = $kecamatan->targetSheets()->get()->mapWithKeys(fn (TargetSheet $sheet) => [$sheet->id => $this->recapIndex($sheet, $settings)]);
+        $groups = [];
+
+        $kecamatan->targetRows()->select(['id', 'target_sheet_id', 'cells', 'recap'])->chunkById(1000, function ($rows) use ($indexes, &$groups) {
+            foreach ($rows as $row) {
+                $value = self::recapValue($row->cells ?? [], $indexes[$row->target_sheet_id] ?? null);
+
+                if ($value !== $row->recap) {
+                    $groups[$value ?? "\0"][] = $row->id;
+                }
+            }
+        });
+
+        foreach ($groups as $value => $ids) {
+            foreach (array_chunk($ids, 1000) as $chunk) {
+                TargetRow::whereKey($chunk)->update(['recap' => $value === "\0" ? null : $value]);
+            }
+        }
+    }
+
+    private function recapIndex(TargetSheet $sheet, ProjectSettings $settings): ?int
+    {
+        return $settings->recapColumn() !== null ? $sheet->columnIndex($settings->recapColumn()) : null;
+    }
+
+    /**
+     * Nilai rekap baris (huruf besar, maks. 100 karakter); null bila sheet tidak punya kolom rekap.
+     *
+     * @param  list<mixed>  $cells
+     */
+    private static function recapValue(array $cells, ?int $index): ?string
+    {
+        return $index === null ? null : mb_substr(mb_strtoupper(trim((string) ($cells[$index] ?? ''))), 0, 100);
     }
 
     /**

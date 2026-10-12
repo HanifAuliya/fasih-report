@@ -5,7 +5,6 @@ namespace App\Livewire\Projects;
 use App\Models\Kecamatan;
 use App\Models\Project;
 use App\Models\TargetRow;
-use App\Models\TargetSheet;
 use App\Services\ReportFileProcessor;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
@@ -227,29 +226,21 @@ class KecamatanTable extends Component
     {
         $settings = $this->project->config();
         $statuses = $settings->statuses();
-        $recapColumn = $settings->recapColumn();
-
-        $columns = TargetSheet::whereIn('kecamatan_id', $this->project->kecamatans()->select('id'))
-            ->where('tracked', true)
-            ->get()
-            ->mapWithKeys(fn (TargetSheet $sheet) => [$sheet->id => $sheet->columnIndex($recapColumn)]);
-
         $recap = [];
 
         TargetRow::where('project_id', $this->project->id)
             ->tracked()
-            ->select(['id', 'target_sheet_id', 'cells', 'status'])
-            ->chunkById(1000, function ($rows) use ($columns, $statuses, &$recap) {
-                foreach ($rows as $row) {
-                    $column = $columns[$row->target_sheet_id] ?? null;
-                    $name = $column !== null ? mb_strtoupper(trim((string) ($row->cells[$column] ?? ''))) : '';
-                    $name = $name !== '' ? $name : '(TANPA KECAMATAN)';
-                    $status = $row->status ?? $statuses->defaultCode();
+            ->selectRaw('recap, status, count(*) as total')
+            ->groupBy('recap', 'status')
+            ->get()
+            ->each(function (TargetRow $group) use ($statuses, &$recap) {
+                $name = (string) $group->recap !== '' ? $group->recap : '(TANPA KECAMATAN)';
+                $status = $group->status ?? $statuses->defaultCode();
+                $total = (int) $group->total;
 
-                    $recap[$name]['total'] = ($recap[$name]['total'] ?? 0) + 1;
-                    $recap[$name]['done'] = ($recap[$name]['done'] ?? 0) + ($statuses->isDone($status) ? 1 : 0);
-                    $recap[$name]['statuses'][$status] = ($recap[$name]['statuses'][$status] ?? 0) + 1;
-                }
+                $recap[$name]['total'] = ($recap[$name]['total'] ?? 0) + $total;
+                $recap[$name]['done'] = ($recap[$name]['done'] ?? 0) + ($statuses->isDone($status) ? $total : 0);
+                $recap[$name]['statuses'][$status] = ($recap[$name]['statuses'][$status] ?? 0) + $total;
             });
 
         return collect($recap)

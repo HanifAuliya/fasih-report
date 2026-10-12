@@ -20,6 +20,9 @@ class DeployController extends Controller
 
         abort_if($token === '' || ! hash_equals($token, (string) $request->header('X-Deploy-Token')), 404);
 
+        // Migrasi data (mis. mengisi kolom baru untuk puluhan ribu baris) bisa lebih lama dari batas bawaan PHP
+        set_time_limit(300);
+
         $output = [];
 
         // Cache konfigurasi lama dibuang dulu supaya isi .env terbaru (mis. akun admin) terbaca
