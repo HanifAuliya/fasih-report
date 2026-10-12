@@ -209,6 +209,13 @@ class KecamatanData extends Component
         $file = $unitReports->upload($this->kecamatan, $this->reportUpload, auth()->id());
 
         $this->reset(['reportUpload', 'showReportUpload']);
+
+        if ($file->is_active && $file->kecamatan_id !== $this->kecamatan->id) {
+            $this->reportChanged("Laporan ini milik {$file->kecamatan->nama}, otomatis dipasang di sana: {$file->original_name}");
+
+            return;
+        }
+
         $this->reportChanged($file->is_active ? 'Laporan aktif: '.$file->original_name : $file->summary, $file->is_active);
     }
 

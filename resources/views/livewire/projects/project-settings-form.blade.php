@@ -77,6 +77,12 @@
                     <p class="mt-1 text-[11px] text-slate-400">Pisahkan dengan koma; yang pertama terisi dipakai.</p>
                     @error('reportKeyFields') <p class="mt-1.5 text-xs text-rose-600">{{ $message }}</p> @enderror
                 </div>
+                <div class="md:col-span-2">
+                    <label class="label">Kolom pembeda (opsional)</label>
+                    <input wire:model="keyDetailColumn" type="text" list="header-options" class="input font-mono" placeholder="Nama usaha">
+                    <p class="mt-1 text-[11px] text-slate-400">Isi bila satu kunci punya beberapa baris (mis. satu assignment berisi beberapa usaha). Baris dibedakan lewat kunci + kolom ini; di laporan dicocokkan ke targets[].nama.</p>
+                    @error('keyDetailColumn') <p class="mt-1.5 text-xs text-rose-600">{{ $message }}</p> @enderror
+                </div>
             @else
                 <div class="md:col-span-2">
                     <label class="label">Field nomor baris di laporan (opsional)</label>

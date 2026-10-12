@@ -238,6 +238,59 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame(2, $project->kecamatans()->sole()->realisasi);
     }
 
+    public function test_assignment_with_several_businesses_is_keyed_per_business_and_report_goes_to_owner_bagian(): void
+    {
+        // NTB: satu assignment bisa punya beberapa usaha, tersebar di beberapa file Bagian
+        $project = $this->createProject();
+        $bagian = function (string $name, array $rows): UploadedFile {
+            $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+            $writer = new Writer;
+            $writer->openToFile($path);
+            $writer->addRow(Row::fromValues(['nama_kab', 'Nama usaha', 'assignment_id']));
+            foreach ($rows as [$usaha, $uuid]) {
+                $writer->addRow(Row::fromValues(['Hulu Sungai Tengah', $usaha, $uuid]));
+            }
+            $writer->close();
+
+            return UploadedFile::fake()->createWithContent($name, file_get_contents($path));
+        };
+        $this->upload($project, $bagian('Bagian 1.xlsx', [['TOKO PLASTIK (HAIRIL)', self::UUID_A], ['ROTI KASUR', self::UUID_A], ['WARUNG SOTO', self::UUID_B]]));
+        $this->upload($project, $bagian('Bagian 2.xlsx', [['UTP PERKEBUNAN', self::UUID_A], ['TK MELATI', self::UUID_C]]));
+
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project])
+            ->set('keyColumn', 'assignment_id')
+            ->set('keyDetailColumn', 'Nama usaha')
+            ->set('reportKeyFields', 'id, assignment_id, link')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        [$bagian1, $bagian2] = $project->kecamatans()->orderBy('kode')->get()->all();
+        $this->assertSame(3, $bagian1->refresh()->target);
+        $this->assertSame(2, $bagian2->refresh()->target, 'usaha lain dari assignment yang sama bukan baris kembar');
+
+        // Laporan Bagian 2 terupload di halaman Bagian 1 (nama file laporan sama untuk semua Bagian)
+        $this->uploadReport($project, UploadedFile::fake()->createWithContent('antrean-koreksi-ntb-Hulu_Sungai_Tengah.json', json_encode(['queue' => [
+            ['id' => self::UUID_A, 'status' => 'done', 'targets' => [['row' => 2, 'nama' => 'utp  perkebunan', 'neu' => '5000']]],
+            ['id' => self::UUID_C, 'status' => 'y2026', 'targets' => [['row' => 3, 'nama' => 'TK MELATI']]],
+        ]])));
+
+        $rows = TargetRow::with('kecamatan')->get()->keyBy(fn (TargetRow $row) => $row->kecamatan->nama.'|'.$row->cells[1]);
+        $this->assertSame('done', $rows['BAGIAN 02|UTP PERKEBUNAN']->status);
+        $this->assertSame('5000', $rows['BAGIAN 02|UTP PERKEBUNAN']->result['neu']);
+        $this->assertSame('pending', $rows['BAGIAN 01|TOKO PLASTIK (HAIRIL)']->status, 'usaha lain di assignment yang sama tidak ikut');
+        $this->assertSame('pending', $rows['BAGIAN 01|ROTI KASUR']->status);
+        $this->assertSame($bagian2->id, $bagian2->reports()->sole()->kecamatan_id);
+        $this->assertSame(0, $bagian1->reports()->count());
+
+        // Laporan Bagian 1 tetap bisa diupload sesudahnya tanpa menghapus hasil Bagian 2
+        $this->uploadReport($project, UploadedFile::fake()->createWithContent('antrean-koreksi-ntb-Hulu_Sungai_Tengah.json', json_encode(['queue' => [
+            ['id' => self::UUID_A, 'status' => 'done', 'targets' => [['row' => 2, 'nama' => 'TOKO PLASTIK (HAIRIL)'], ['row' => 3, 'nama' => 'ROTI KASUR']]],
+        ]])));
+
+        $this->assertSame(2, $bagian1->refresh()->realisasi);
+        $this->assertSame(1, $bagian2->refresh()->realisasi);
+    }
+
     public function test_csv_report_with_custom_statuses_updates_progress_and_recap(): void
     {
         $project = $this->createProject();

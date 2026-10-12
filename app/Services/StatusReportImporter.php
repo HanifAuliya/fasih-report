@@ -30,6 +30,12 @@ class StatusReportImporter
     /** Penanda sheet untuk laporan yang hanya menyebut nomor baris; diganti sheet milik unit saat diterapkan. */
     private const ANY_SHEET = '*';
 
+    /** Akhiran kunci untuk "semua baris dengan kunci ini" (laporan tanpa pembeda pada pekerjaan berkolom pembeda). */
+    private const ANY_DETAIL = '#*';
+
+    /** Field nama pembeda di laporan (mis. targets[].nama = Nama usaha), selain nama kolom pembeda itu sendiri. */
+    private const DETAIL_NAME_FIELDS = ['nama', 'nama_usaha', 'namaUsaha'];
+
     /**
      * Statistik pembacaan terakhir, untuk menjelaskan kenapa laporan tidak cocok.
      *
@@ -46,7 +52,7 @@ class StatusReportImporter
     public function import(ReportFile $file, Kecamatan $unit): array
     {
         $settings = $unit->project->config();
-        $records = $this->forUnitSheet($this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings), $unit);
+        $records = $this->records($file, $unit);
 
         $rows = TargetRow::where('kecamatan_id', $unit->id)
             ->tracked()
@@ -108,7 +114,7 @@ class StatusReportImporter
         }
 
         $settings = $owner->project->config();
-        $records = $this->forUnitSheet($this->parse(Storage::disk('local')->get($file->path), $file->extension, $settings), $owner);
+        $records = $this->records($file, $owner);
         $defaultCode = $settings->statuses()->defaultCode();
         $applied = 0;
 
@@ -125,6 +131,78 @@ class StatusReportImporter
         }
 
         return $applied;
+    }
+
+    /**
+     * Unit pekerjaan ini yang paling banyak memiliki baris laporan (hanya untuk kolom kunci). Dipakai saat upload
+     * supaya laporan yang terupload di halaman unit lain (nama file laporan sering sama) otomatis masuk ke unit
+     * pemiliknya. Null bila $unit sendiri sudah yang terbanyak atau tidak ada yang cocok.
+     */
+    public function ownerUnitId(ReportFile $file, Kecamatan $unit): ?int
+    {
+        if ($unit->project->config()->keyMode() !== ProjectSettings::KEY_COLUMN) {
+            return null;
+        }
+
+        $keys = array_keys($this->records($file, $unit));
+        $counts = [];
+
+        foreach (array_chunk($keys, 1000) as $chunk) {
+            TargetRow::where('project_id', $unit->project_id)
+                ->tracked()
+                ->whereIn('row_key', $chunk)
+                ->selectRaw('kecamatan_id, count(*) as total')
+                ->groupBy('kecamatan_id')
+                ->pluck('total', 'kecamatan_id')
+                ->each(function ($total, $id) use (&$counts) {
+                    $counts[$id] = ($counts[$id] ?? 0) + (int) $total;
+                });
+        }
+
+        arsort($counts);
+        $best = array_key_first($counts);
+
+        return $best !== null && $best !== $unit->id && $counts[$best] > ($counts[$unit->id] ?? 0) ? (int) $best : null;
+    }
+
+    /**
+     * Isi laporan siap dicocokkan ke baris $unit: sheet & pembeda yang tidak disebut laporan dilengkapi.
+     *
+     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>
+     */
+    private function records(ReportFile $file, Kecamatan $unit): array
+    {
+        $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $unit->project->config());
+
+        return $this->expandAnyDetail($this->forUnitSheet($records, $unit), $unit->project_id);
+    }
+
+    /**
+     * Kunci "uuid#*" (laporan tanpa nama usaha) berlaku untuk semua baris dengan kunci itu, mis. "uuid#a1b2…".
+     *
+     * @param  array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>  $records
+     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>
+     */
+    private function expandAnyDetail(array $records, int $projectId): array
+    {
+        foreach (array_keys($records) as $key) {
+            if (! str_ends_with($key, self::ANY_DETAIL)) {
+                continue;
+            }
+
+            $record = $records[$key];
+            unset($records[$key]);
+
+            TargetRow::where('project_id', $projectId)
+                ->where('row_key', 'like', substr($key, 0, -1).'%')
+                ->distinct()
+                ->pluck('row_key')
+                ->each(function (string $rowKey) use (&$records, $record) {
+                    $records[$rowKey] ??= $record;
+                });
+        }
+
+        return $records;
     }
 
     /**
@@ -286,6 +364,10 @@ class StatusReportImporter
     {
         $key = $this->rowKey($item, $settings);
 
+        if ($key !== null && ($detailColumn = $settings->keyDetailColumn()) !== null) {
+            return $this->detailKeys($item, $key, $detailColumn, $settings);
+        }
+
         if ($key !== null) {
             return [$key => []];
         }
@@ -307,6 +389,43 @@ class StatusReportImporter
         }
 
         return $keys;
+    }
+
+    /**
+     * Kunci gabungan kunci + pembeda: satu per targets[] (mis. tiap usaha dalam satu assignment), atau dari
+     * field pembeda di item itu sendiri; tanpa pembeda sama sekali berlaku untuk semua baris kunci itu.
+     *
+     * @param  array<string, mixed>  $item
+     * @return array<string, array<string, scalar>>
+     */
+    private function detailKeys(array $item, string $key, string $detailColumn, ProjectSettings $settings): array
+    {
+        // Kunci gabungan yang sudah jadi (mis. dari "Download JSON terkini") dipakai apa adanya
+        $raw = (string) $this->firstField($item, $settings->reportKeyFields());
+
+        if (str_contains($raw, '#')) {
+            return [strtolower(strstr($raw, '#', true)).strstr($raw, '#') => []];
+        }
+
+        $fields = [$detailColumn, ...self::DETAIL_NAME_FIELDS];
+        $keys = [];
+
+        foreach (is_array($item['targets'] ?? null) ? $item['targets'] : [] as $target) {
+            if (is_array($target) && ($detail = $this->firstField($target, $fields)) !== null) {
+                $keys[TargetImporter::detailKey($key, $detail)] = array_filter(
+                    array_diff_key($target, ['row' => 0, 'sheet' => 0, 'status' => 0]),
+                    fn ($value) => is_scalar($value) && $value !== '',
+                );
+            }
+        }
+
+        if ($keys !== []) {
+            return $keys;
+        }
+
+        $detail = $this->firstField($item, $fields) ?? $this->firstField(is_array($item['excel'] ?? null) ? $item['excel'] : [], [$detailColumn]);
+
+        return [$detail !== null ? TargetImporter::detailKey($key, $detail) : $key.self::ANY_DETAIL => []];
     }
 
     /**

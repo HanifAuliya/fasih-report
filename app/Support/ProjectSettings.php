@@ -27,6 +27,7 @@ class ProjectSettings
         'unit_source' => self::UNIT_KECAMATAN,
         'key_mode' => self::KEY_COLUMN,
         'key_column' => 'assignment_id',
+        'key_detail_column' => null,
         'report_key_fields' => ['assignment_id', 'id'],
         'recap_column' => null,
         'initial_status_column' => null,
@@ -68,6 +69,15 @@ class ProjectSettings
     public function keyColumn(): ?string
     {
         return self::blankToNull($this->settings['key_column']);
+    }
+
+    /**
+     * Kolom pembeda bila satu kunci berisi beberapa baris (mis. satu assignment dengan beberapa usaha):
+     * kunci baris = kolom kunci + kolom ini. Hanya untuk pencocokan lewat kolom kunci.
+     */
+    public function keyDetailColumn(): ?string
+    {
+        return $this->keyMode() === self::KEY_COLUMN ? self::blankToNull($this->settings['key_detail_column'] ?? null) : null;
     }
 
     /**

@@ -28,6 +28,8 @@ class ProjectSettingsForm extends Component
 
     public string $keyColumn = '';
 
+    public string $keyDetailColumn = '';
+
     public string $reportKeyFields = '';
 
     public string $recapColumn = '';
@@ -66,6 +68,7 @@ class ProjectSettingsForm extends Component
         $this->unitSource = $config->unitSource();
         $this->keyMode = $config->keyMode();
         $this->keyColumn = (string) $config->keyColumn();
+        $this->keyDetailColumn = (string) $config->keyDetailColumn();
         $this->reportKeyFields = implode(', ', $config->reportKeyFields());
         $this->recapColumn = (string) $config->recapColumn();
         $this->initialStatusColumn = (string) $config->initialStatusColumn();
@@ -117,6 +120,7 @@ class ProjectSettingsForm extends Component
             'unitSource' => ['required', Rule::in([ProjectSettings::UNIT_KECAMATAN, ProjectSettings::UNIT_FILE])],
             'keyMode' => ['required', Rule::in([ProjectSettings::KEY_COLUMN, ProjectSettings::KEY_ROW])],
             'keyColumn' => [Rule::requiredIf($this->keyMode === ProjectSettings::KEY_COLUMN), 'nullable', 'string', 'max:100'],
+            'keyDetailColumn' => ['nullable', 'string', 'max:100'],
             'reportKeyFields' => [Rule::requiredIf($this->keyMode === ProjectSettings::KEY_COLUMN), 'nullable', 'string', 'max:300'],
             'recapColumn' => ['nullable', 'string', 'max:100'],
             'initialStatusColumn' => ['nullable', 'string', 'max:100'],
@@ -144,6 +148,7 @@ class ProjectSettingsForm extends Component
             'unit_source' => $this->unitSource,
             'key_mode' => $this->keyMode,
             'key_column' => $this->keyColumn,
+            'key_detail_column' => $this->keyDetailColumn,
             'report_key_fields' => ProjectSettings::toList($this->reportKeyFields),
             'recap_column' => $this->recapColumn,
             'initial_status_column' => $this->initialStatusColumn,
@@ -177,6 +182,7 @@ class ProjectSettingsForm extends Component
             'unit_source' => $config->unitSource(),
             'key_mode' => $config->keyMode(),
             'key_column' => $config->keyColumn(),
+            'key_detail_column' => $config->keyDetailColumn(),
             'report_key_fields' => $config->reportKeyFields(),
             'initial_status_column' => $config->initialStatusColumn(),
             'task_column' => $config->taskColumn(),

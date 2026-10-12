@@ -129,7 +129,7 @@ class TargetImporter
     /**
      * Posisi kolom yang dipakai untuk menentukan kunci baris di satu sheet.
      *
-     * @return array{key: ?int, task: ?int, required: array<string, int>}
+     * @return array{key: ?int, detail: ?int, task: ?int, required: array<string, int>}
      */
     private function matchingColumns(TargetSheet $sheet, ProjectSettings $settings): array
     {
@@ -143,6 +143,7 @@ class TargetImporter
 
         return [
             'key' => $this->keyColumnIndex($sheet, $settings),
+            'detail' => $settings->keyDetailColumn() !== null ? $sheet->columnIndex($settings->keyDetailColumn()) : null,
             'task' => $settings->taskColumn() !== null ? $sheet->columnIndex($settings->taskColumn()) : null,
             'required' => $required,
         ];
@@ -171,7 +172,7 @@ class TargetImporter
      * Kunci baris (null = tidak dihitung) & apakah baris "belum siap" (dikerjakan tapi kolom wajib kosong).
      *
      * @param  list<mixed>  $cells
-     * @param  array{key: ?int, task: ?int, required: array<string, int>}  $columns
+     * @param  array{key: ?int, detail: ?int, task: ?int, required: array<string, int>}  $columns
      * @return array{0: ?string, 1: bool}
      */
     private function rowKeyFor(TargetSheet $sheet, array $cells, int $rowNumber, ProjectSettings $settings, array $columns): array
@@ -192,12 +193,24 @@ class TargetImporter
             }
         }
 
-        return [
-            $settings->keyMode() === ProjectSettings::KEY_ROW
-                ? self::sheetRowKey($sheet->name, $rowNumber)
-                : self::normalizeKey($cells[$columns['key']] ?? null),
-            false,
-        ];
+        if ($settings->keyMode() === ProjectSettings::KEY_ROW) {
+            return [self::sheetRowKey($sheet->name, $rowNumber), false];
+        }
+
+        $key = self::normalizeKey($cells[$columns['key']] ?? null);
+
+        return [$key !== null && $columns['detail'] !== null ? self::detailKey($key, $cells[$columns['detail']] ?? null) : $key, false];
+    }
+
+    /**
+     * Kunci gabungan "kunci#pembeda" (mis. assignment + nama usaha). Pembeda disimpan sebagai sidik pendek
+     * supaya muat di kolom kunci; huruf besar/kecil & spasi berlebih tidak dibedakan.
+     */
+    public static function detailKey(string $key, mixed $detail): string
+    {
+        $detail = preg_replace('/\s+/u', ' ', mb_strtoupper(trim((string) $detail)));
+
+        return $key.'#'.substr(md5($detail), 0, 12);
     }
 
     /**

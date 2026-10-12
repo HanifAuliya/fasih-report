@@ -44,6 +44,12 @@ class UnitReportService
             'uploaded_by' => $userId,
         ]);
 
+        // Nama file laporan sering sama untuk semua Bagian: pasang di unit yang benar-benar memiliki barisnya
+        if ($ownerId = $this->statusImporter->ownerUnitId($file, $unit)) {
+            $file->update(['kecamatan_id' => $ownerId]);
+            $file->load('kecamatan');
+        }
+
         $this->activate($file);
 
         return $file->refresh();
