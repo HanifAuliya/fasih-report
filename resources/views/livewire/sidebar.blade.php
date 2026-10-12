@@ -14,8 +14,8 @@
 {{-- Posisi scroll disimpan supaya tidak loncat ke atas setiap pindah halaman --}}
 <nav class="scroll-thin flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-2"
     x-data
-    x-init="try { $el.scrollTop = Number(sessionStorage.getItem('sidebar-scroll') || 0) } catch (e) {}"
-    x-on:scroll.debounce.100ms="try { sessionStorage.setItem('sidebar-scroll', $el.scrollTop) } catch (e) {}"
+    x-init="(() => { try { $el.scrollTop = Number(sessionStorage.getItem('sidebar-scroll') || 0) } catch (e) {} })()"
+    x-on:scroll.debounce.100ms="(() => { try { sessionStorage.setItem('sidebar-scroll', $el.scrollTop) } catch (e) {} })()"
 >
 
     {{-- Menu utama --}}
