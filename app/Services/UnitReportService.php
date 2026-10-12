@@ -134,7 +134,7 @@ class UnitReportService
 
     /**
      * Status unit = status awal Excel + semua laporan aktifnya (terlama dulu), lalu hasil laporan unit lain
-     * untuk baris milik unit ini (diteruskan; hanya kolom kunci, nomor baris tidak pernah diteruskan).
+     * untuk baris milik unit ini (diteruskan lewat kunci yang sama, atau lewat isi baris pada mode nomor baris).
      *
      * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, forwarded: array<string, int>, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}|null hasil penerapan $focus
      */
@@ -151,15 +151,13 @@ class UnitReportService
             }
         }
 
-        if ($unit->project->config()->keyMode() === ProjectSettings::KEY_COLUMN) {
-            ReportFile::query()
-                ->where('project_id', $unit->project_id)
-                ->where('kecamatan_id', '!=', $unit->id)
-                ->where('is_active', true)
-                ->orderBy('id')
-                ->get()
-                ->each(fn (ReportFile $report) => $this->statusImporter->applyTo($report, $unit));
-        }
+        ReportFile::query()
+            ->where('project_id', $unit->project_id)
+            ->where('kecamatan_id', '!=', $unit->id)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get()
+            ->each(fn (ReportFile $report) => $this->statusImporter->applyTo($report, $unit));
 
         $unit->syncProgressFromTargets();
 

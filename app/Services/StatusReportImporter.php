@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Models\Kecamatan;
 use App\Models\ReportFile;
 use App\Models\TargetRow;
+use App\Models\TargetSheet;
 use App\Support\ProjectSettings;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 
@@ -33,6 +35,22 @@ class StatusReportImporter
     /** Akhiran kunci untuk "semua baris dengan kunci ini" (laporan tanpa pembeda pada pekerjaan berkolom pembeda). */
     private const ANY_DETAIL = '#*';
 
+    /**
+     * Isi baris yang dibandingkan dengan Excel pada pencocokan nomor baris: field di laporan => nama kolom Excel.
+     * Laporan dari file "belum selesai" memakai nomor baris file itu, jadi isinya yang menentukan baris aslinya.
+     */
+    private const CONTENT_FIELDS = [
+        'krt' => ['report' => ['krt', 'nama_krt'], 'excel' => ['Nama Kepala Rumah Tangga']],
+        'usaha' => ['report' => ['namaUsaha', 'nama_usaha', 'nama'], 'excel' => ['Nama Usaha', 'nama_usaha']],
+    ];
+
+    /**
+     * Indeks isi baris pekerjaan (per kombinasi field) => [id, unit], dibuat sekali bila dibutuhkan.
+     *
+     * @var array<string, array<string, list<array{0: int, 1: int}>>>
+     */
+    private array $contentIndex = [];
+
     /** Field nama pembeda di laporan (mis. targets[].nama = Nama usaha), selain nama kolom pembeda itu sendiri. */
     private const DETAIL_NAME_FIELDS = ['nama', 'nama_usaha', 'namaUsaha'];
 
@@ -44,8 +62,8 @@ class StatusReportImporter
     private array $lastParse = ['items' => 0, 'without_key' => 0, 'unknown_statuses' => [], 'sample_keys' => []];
 
     /**
-     * Terapkan laporan ke unit. Baris yang kuncinya milik unit lain pekerjaan ini (mis. baris lama yang ikut
-     * di file Bagian baru, atau file "belum selesai" gabungan) diteruskan ke unit pemiliknya.
+     * Terapkan laporan ke unit. Baris yang ternyata milik unit lain pekerjaan ini (kunci sama di unit lain, atau
+     * isi baris cocok dengan baris unit lain) diteruskan ke unit pemiliknya.
      *
      * @return array{records: int, matched: int, updated: int, skipped: int, unmatched: int, forwarded: array<string, int>, statuses: array<string, int>, unit: string, parse: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}
      */
@@ -53,47 +71,40 @@ class StatusReportImporter
     {
         $settings = $unit->project->config();
         $records = $this->records($file, $unit);
-
-        $rows = TargetRow::where('kecamatan_id', $unit->id)
-            ->tracked()
-            ->whereIn('row_key', array_keys($records))
-            ->get()
-            ->groupBy('row_key');
-        // Hanya kunci yang unik di seluruh pekerjaan (kolom kunci) yang bisa diteruskan; nomor baris
-        // ("sheet1!5") ada di setiap Bagian, jadi laporan per nomor baris hanya berlaku untuk unit ini
-        $elsewhere = $settings->keyMode() !== ProjectSettings::KEY_COLUMN ? collect() : TargetRow::where('project_id', $unit->project_id)
-            ->where('kecamatan_id', '!=', $unit->id)
-            ->tracked()
-            ->whereIn('row_key', array_diff(array_keys($records), $rows->keys()->all()))
-            ->with('kecamatan.project')
-            ->get()
-            ->groupBy('row_key');
+        $targets = $this->targetRows($records, $unit);
 
         $defaultCode = $settings->statuses()->defaultCode();
         $summary = ['records' => count($records), 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'unmatched' => 0, 'forwarded' => [], 'statuses' => [], 'unit' => $unit->nama, 'parse' => $this->lastParse];
         $touched = collect();
 
         foreach ($records as $rowKey => $record) {
-            if ($rows->has($rowKey)) {
-                $summary['matched']++;
+            $rows = $targets[$rowKey];
 
-                foreach ($rows[$rowKey] as $row) {
-                    if ($this->apply($row, $record, $file, $defaultCode)) {
-                        $summary['updated']++;
-                        $summary['statuses'][$record['status']] = ($summary['statuses'][$record['status']] ?? 0) + 1;
-                    } else {
-                        $summary['skipped']++;
-                    }
-                }
-            } elseif ($elsewhere->has($rowKey)) {
-                foreach ($elsewhere[$rowKey] as $row) {
-                    if ($this->apply($row, $record, $file, $defaultCode)) {
-                        $summary['forwarded'][$row->kecamatan->nama] = ($summary['forwarded'][$row->kecamatan->nama] ?? 0) + 1;
-                        $touched->put($row->kecamatan_id, $row->kecamatan);
-                    }
-                }
-            } else {
+            if ($rows->isEmpty()) {
                 $summary['unmatched']++;
+
+                continue;
+            }
+
+            if ($rows->contains('kecamatan_id', $unit->id)) {
+                $summary['matched']++;
+            }
+
+            foreach ($rows as $row) {
+                $applied = $this->apply($row, $record, $file, $defaultCode);
+
+                if ($row->kecamatan_id !== $unit->id) {
+                    if ($applied) {
+                        $other = $row->kecamatan;
+                        $summary['forwarded'][$other->nama] = ($summary['forwarded'][$other->nama] ?? 0) + 1;
+                        $touched->put($other->id, $other);
+                    }
+                } elseif ($applied) {
+                    $summary['updated']++;
+                    $summary['statuses'][$record['status']] = ($summary['statuses'][$record['status']] ?? 0) + 1;
+                } else {
+                    $summary['skipped']++;
+                }
             }
         }
 
@@ -104,8 +115,8 @@ class StatusReportImporter
     }
 
     /**
-     * Terapkan ulang laporan unit lain ke baris milik $owner saja (dipakai saat $owner direset & diaktifkan ulang,
-     * supaya hasil yang dulu diteruskan dari unit lain tidak hilang).
+     * Terapkan ulang satu laporan ke baris milik $owner saja: laporan $owner sendiri, atau laporan unit lain yang
+     * sebagian barisnya ternyata milik $owner (diteruskan). Dipakai saat status $owner dihitung ulang.
      */
     public function applyTo(ReportFile $file, Kecamatan $owner): int
     {
@@ -113,18 +124,16 @@ class StatusReportImporter
             return 0;
         }
 
-        $settings = $owner->project->config();
-        $records = $this->records($file, $owner);
-        $defaultCode = $settings->statuses()->defaultCode();
+        $home = $file->kecamatan ?? $owner;
+        $records = $this->records($file, $home);
+        $defaultCode = $owner->project->config()->statuses()->defaultCode();
         $applied = 0;
 
-        TargetRow::where('kecamatan_id', $owner->id)
-            ->tracked()
-            ->whereIn('row_key', array_keys($records))
-            ->get()
-            ->each(function (TargetRow $row) use ($records, $file, $defaultCode, &$applied) {
-                $applied += $this->apply($row, $records[$row->row_key], $file, $defaultCode) ? 1 : 0;
-            });
+        foreach ($this->targetRows($records, $home) as $rowKey => $rows) {
+            foreach ($rows->where('kecamatan_id', $owner->id) as $row) {
+                $applied += $this->apply($row, $records[$rowKey], $file, $defaultCode) ? 1 : 0;
+            }
+        }
 
         if ($applied > 0) {
             $owner->syncProgressFromTargets();
@@ -134,41 +143,219 @@ class StatusReportImporter
     }
 
     /**
-     * Unit pekerjaan ini yang paling banyak memiliki baris laporan (hanya untuk kolom kunci). Dipakai saat upload
-     * supaya laporan yang terupload di halaman unit lain (nama file laporan sering sama) otomatis masuk ke unit
-     * pemiliknya. Null bila $unit sendiri sudah yang terbanyak atau tidak ada yang cocok.
+     * Unit pekerjaan ini yang paling banyak memiliki baris laporan. Dipakai saat upload supaya laporan yang
+     * terupload di halaman unit lain (nama file laporan sering sama, atau laporan dari file "belum selesai")
+     * otomatis masuk ke unit pemiliknya. Null bila $unit sendiri sudah yang terbanyak atau tidak ada yang cocok.
      */
     public function ownerUnitId(ReportFile $file, Kecamatan $unit): ?int
     {
-        if ($unit->project->config()->keyMode() !== ProjectSettings::KEY_COLUMN) {
+        $counts = collect($this->targetRows($this->records($file, $unit), $unit))
+            ->flatten(1)
+            ->countBy('kecamatan_id')
+            ->sortDesc();
+
+        $best = $counts->keys()->first();
+
+        return $best !== null && (int) $best !== $unit->id && $counts[$best] > ($counts[$unit->id] ?? 0) ? (int) $best : null;
+    }
+
+    /**
+     * Baris tujuan tiap kunci laporan yang diupload di unit $home.
+     * - Kolom kunci: baris berkunci sama di $home; bila tidak ada, di unit lain pekerjaan ini.
+     * - Nomor baris: baris di nomor itu asalkan isinya (KRT / nama usaha) cocok; bila tidak cocok, baris berisi
+     *   sama di seluruh pekerjaan (unit $home didahulukan). Laporan tanpa isi pembanding hanya berlaku di $home.
+     *
+     * @param  array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}>  $records
+     * @return array<string, Collection<int, TargetRow>>
+     */
+    private function targetRows(array $records, Kecamatan $home): array
+    {
+        $keys = array_keys($records);
+        $own = collect();
+
+        foreach (array_chunk($keys, 1000) as $chunk) {
+            $own = $own->merge(TargetRow::where('kecamatan_id', $home->id)->tracked()->whereIn('row_key', $chunk)->with(['sheet', 'kecamatan'])->get());
+        }
+
+        $own = $own->groupBy('row_key');
+
+        if ($home->project->config()->keyMode() === ProjectSettings::KEY_COLUMN) {
+            $missing = array_values(array_diff($keys, $own->keys()->all()));
+            $elsewhere = collect();
+
+            foreach (array_chunk($missing, 1000) as $chunk) {
+                $elsewhere = $elsewhere->merge(TargetRow::where('project_id', $home->project_id)
+                    ->where('kecamatan_id', '!=', $home->id)
+                    ->tracked()
+                    ->whereIn('row_key', $chunk)
+                    ->with('kecamatan')
+                    ->get());
+            }
+
+            $elsewhere = $elsewhere->groupBy('row_key');
+
+            return array_combine($keys, array_map(fn (string $key) => $own->get($key) ?? $elsewhere->get($key) ?? collect(), $keys));
+        }
+
+        $targets = [];
+        $used = [];
+        $lookups = [];
+
+        foreach ($records as $key => $record) {
+            $row = $own->get($key)?->first();
+
+            if ($row !== null && $this->contentMatches($row, $record['match']) !== false) {
+                $targets[$key] = collect([$row]);
+                $used[$row->id] = true;
+            } elseif ($record['match'] !== []) {
+                $lookups[$key] = $record['match'];
+            } else {
+                $targets[$key] = collect();
+            }
+        }
+
+        $found = [];
+
+        foreach ($lookups as $key => $match) {
+            $found[$key] = $this->findByContent($home, $match, $used);
+        }
+
+        $rows = TargetRow::whereKey(array_filter($found))->with('kecamatan')->get()->keyBy('id');
+
+        foreach ($lookups as $key => $match) {
+            $targets[$key] = $found[$key] !== null && $rows->has($found[$key]) ? collect([$rows[$found[$key]]]) : collect();
+        }
+
+        return $targets + array_fill_keys($keys, collect());
+    }
+
+    /**
+     * Id baris pekerjaan yang isinya sama (belum dipakai kunci laporan lain), unit $home didahulukan.
+     *
+     * @param  array<string, string>  $match
+     * @param  array<int, bool>  $used
+     */
+    private function findByContent(Kecamatan $home, array $match, array &$used): ?int
+    {
+        $signature = implode(',', array_keys($match));
+        $index = $this->contentIndex[$home->project_id.':'.$signature] ??= $this->buildContentIndex($home->project_id, array_keys($match));
+        $candidates = $index[implode('|', $match)] ?? [];
+
+        usort($candidates, fn (array $a, array $b) => ($b[1] === $home->id) <=> ($a[1] === $home->id));
+
+        foreach ($candidates as [$id]) {
+            if (! isset($used[$id])) {
+                $used[$id] = true;
+
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $fields
+     * @return array<string, list<array{0: int, 1: int}>>
+     */
+    private function buildContentIndex(int $projectId, array $fields): array
+    {
+        $index = [];
+        $sheets = [];
+
+        TargetRow::where('project_id', $projectId)
+            ->tracked()
+            ->select(['id', 'kecamatan_id', 'target_sheet_id', 'row_number', 'cells'])
+            ->orderBy('kecamatan_id')
+            ->orderBy('row_number')
+            ->lazy(1000)
+            ->each(function (TargetRow $row) use ($fields, &$index, &$sheets) {
+                $sheet = $sheets[$row->target_sheet_id] ??= TargetSheet::find($row->target_sheet_id);
+                $content = $sheet ? $this->rowContent($row, $sheet, $fields) : [];
+
+                if (count($content) === count($fields)) {
+                    $index[implode('|', $content)][] = [$row->id, $row->kecamatan_id];
+                }
+            });
+
+        return $index;
+    }
+
+    /**
+     * Apakah isi baris sama dengan isi laporan; null bila tidak ada yang bisa dibandingkan.
+     *
+     * @param  array<string, string>  $match
+     */
+    private function contentMatches(TargetRow $row, array $match): ?bool
+    {
+        if ($match === [] || $row->sheet === null) {
             return null;
         }
 
-        $keys = array_keys($this->records($file, $unit));
-        $counts = [];
+        $content = $this->rowContent($row, $row->sheet, array_keys($match));
+        $compared = array_intersect_key($match, $content);
 
-        foreach (array_chunk($keys, 1000) as $chunk) {
-            TargetRow::where('project_id', $unit->project_id)
-                ->tracked()
-                ->whereIn('row_key', $chunk)
-                ->selectRaw('kecamatan_id, count(*) as total')
-                ->groupBy('kecamatan_id')
-                ->pluck('total', 'kecamatan_id')
-                ->each(function ($total, $id) use (&$counts) {
-                    $counts[$id] = ($counts[$id] ?? 0) + (int) $total;
-                });
+        return $compared === [] ? null : $compared == array_intersect_key($content, $compared);
+    }
+
+    /**
+     * @param  list<string>  $fields
+     * @return array<string, string> isi kolom Excel yang ada di sheet ini (dinormalkan)
+     */
+    private function rowContent(TargetRow $row, TargetSheet $sheet, array $fields): array
+    {
+        $content = [];
+
+        foreach ($fields as $field) {
+            foreach (self::CONTENT_FIELDS[$field]['excel'] as $header) {
+                if (($index = $sheet->columnIndex($header)) !== null) {
+                    $content[$field] = self::normalizeContent($row->cells[$index] ?? '');
+
+                    break;
+                }
+            }
         }
 
-        arsort($counts);
-        $best = array_key_first($counts);
+        return $content;
+    }
 
-        return $best !== null && $best !== $unit->id && $counts[$best] > ($counts[$unit->id] ?? 0) ? (int) $best : null;
+    /**
+     * Isi pembanding dari laporan (item + target), mis. ['krt' => 'FAUZI', 'usaha' => 'JUAL PULSA'].
+     *
+     * @param  array<string, mixed>  $fields
+     * @return array<string, string>
+     */
+    private function contentOf(array $fields): array
+    {
+        $excel = is_array($fields['excel'] ?? null) ? $fields['excel'] : [];
+        $content = [];
+
+        foreach (self::CONTENT_FIELDS as $name => $spec) {
+            $value = $this->firstField($fields, $spec['report']);
+
+            foreach ($excel as $header => $cell) {
+                if ($value === null && is_scalar($cell) && in_array(TargetSheet::normalizeHeader((string) $header), array_map(TargetSheet::normalizeHeader(...), $spec['excel']), true)) {
+                    $value = (string) $cell;
+                }
+            }
+
+            if ($value !== null && ($value = self::normalizeContent($value)) !== '') {
+                $content[$name] = $value;
+            }
+        }
+
+        return $content;
+    }
+
+    private static function normalizeContent(mixed $value): string
+    {
+        return trim(preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtoupper((string) $value)));
     }
 
     /**
      * Isi laporan siap dicocokkan ke baris $unit: sheet & pembeda yang tidak disebut laporan dilengkapi.
      *
-     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>
+     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}>
      */
     private function records(ReportFile $file, Kecamatan $unit): array
     {
@@ -180,8 +367,8 @@ class StatusReportImporter
     /**
      * Kunci "uuid#*" (laporan tanpa nama usaha) berlaku untuk semua baris dengan kunci itu, mis. "uuid#a1b2…".
      *
-     * @param  array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>  $records
-     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>
+     * @param  array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}>  $records
+     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}>
      */
     private function expandAnyDetail(array $records, int $projectId): array
     {
@@ -208,8 +395,8 @@ class StatusReportImporter
     /**
      * Kunci "*!4" (laporan tanpa nama sheet) memakai sheet file unit, mis. "bagian 1!4".
      *
-     * @param  array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>  $records
-     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>
+     * @param  array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}>  $records
+     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}>
      */
     private function forUnitSheet(array $records, Kecamatan $unit): array
     {
@@ -232,7 +419,7 @@ class StatusReportImporter
     }
 
     /**
-     * @param  array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}  $record
+     * @param  array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}  $record
      */
     private function apply(TargetRow $row, array $record, ReportFile $file, ?string $defaultCode): bool
     {
@@ -270,7 +457,7 @@ class StatusReportImporter
     }
 
     /**
-     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>}>
+     * @return array<string, array{status: string, reason: ?string, done_at: ?Carbon, result: array<string, scalar>, match: array<string, string>}>
      */
     public function parse(string $content, string $extension, ProjectSettings $settings): array
     {
@@ -327,7 +514,11 @@ class StatusReportImporter
                     $this->lastParse['sample_keys'][] = $rowKey;
                 }
 
-                $records[$rowKey] = $target === [] ? $record : [...$record, 'result' => array_slice([...$record['result'], ...$target], 0, self::MAX_RESULT_FIELDS, true)];
+                $records[$rowKey] = [
+                    ...$record,
+                    'result' => $target === [] ? $record['result'] : array_slice([...$record['result'], ...$target], 0, self::MAX_RESULT_FIELDS, true),
+                    'match' => $this->contentOf([...$item, ...$target]),
+                ];
             }
         }
 

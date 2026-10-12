@@ -6,6 +6,7 @@ use App\Enums\ProjectType;
 use App\Livewire\Projects\Index;
 use App\Livewire\Projects\KecamatanData;
 use App\Livewire\Projects\KecamatanTable;
+use App\Models\Kecamatan;
 use App\Models\Project;
 use App\Models\TargetRow;
 use App\Models\User;
@@ -203,6 +204,43 @@ class FasihOtomatisTest extends TestCase
         $this->assertSame('pending', TargetRow::where('kecamatan_id', $bagian01->id)->where('row_key', 'sheet1!3')->sole()->status);
         $this->assertSame(2, $bagian02->refresh()->realisasi);
         $this->assertSame(0, $bagian01->refresh()->realisasi);
+    }
+
+    public function test_report_from_pending_excel_matches_original_rows_by_content(): void
+    {
+        $project = $this->createProject();
+        $this->seedBagians($project);
+
+        $this->uploadReport($project, '01', UploadedFile::fake()->createWithContent('fasih-data-1.json', json_encode(['queue' => [
+            ['id' => 'Sheet1!3', 'krt' => 'ARDIANSYAH', 'namaUsaha' => 'WARUNG SOTO', 'status' => 'done', 'doneAt' => '2026-10-10T03:00:00Z'],
+        ]])));
+
+        // Script dijalankan di "Excel belum selesai" semua Bagian: nomor barisnya nomor baris file itu
+        $this->uploadReport($project, '01', UploadedFile::fake()->createWithContent('fasih-data-2.json', json_encode(['queue' => [
+            ['id' => 'Sheet1!2', 'krt' => 'RIJALI HADI', 'namaUsaha' => 'Hortikultura', 'status' => 'done', 'doneAt' => '2026-10-12T03:00:00Z'],
+            ['id' => 'Sheet1!3', 'krt' => 'MASRIAH', 'namaUsaha' => 'TOKO KELONTONG', 'status' => 'done', 'doneAt' => '2026-10-12T03:00:00Z'],
+            ['id' => 'Sheet1!4', 'krt' => 'TAUFIK  RAHMAN', 'namaUsaha' => 'TANAMAN LOMBOK', 'status' => 'red', 'doneAt' => '2026-10-12T03:00:00Z'],
+        ]])));
+
+        $bagian01 = $project->kecamatans()->where('kode', '01')->sole();
+        $bagian02 = $project->kecamatans()->where('kode', '02')->sole();
+        $status = fn (Kecamatan $unit, int $row) => TargetRow::where('kecamatan_id', $unit->id)->where('row_number', $row)->sole()->status;
+
+        $this->assertSame('done', $status($bagian01, 2));
+        $this->assertSame('done', $status($bagian01, 3), 'hasil laporan pertama tetap dipakai');
+        $this->assertSame('red', $status($bagian02, 2));
+        $this->assertSame('done', $status($bagian02, 3));
+        $this->assertSame(2, $bagian01->refresh()->realisasi);
+        $this->assertSame(1, $bagian02->refresh()->realisasi);
+        $this->assertSame(['fasih-data-2.json'], $bagian02->reports()->pluck('original_name')->all(), 'laporan masuk ke unit yang barisnya terbanyak');
+
+        // Bagian 01 dihitung ulang (laporan baru): hasil yang diteruskan dari laporan Bagian 02 tetap ada
+        $this->uploadReport($project, '01', UploadedFile::fake()->createWithContent('fasih-data-3.json', json_encode(['queue' => [
+            ['id' => 'Sheet1!3', 'krt' => 'ARDIANSYAH', 'namaUsaha' => 'WARUNG SOTO', 'status' => 'done', 'doneAt' => '2026-10-13T03:00:00Z'],
+        ]])));
+
+        $this->assertSame('done', $status($bagian01, 2));
+        $this->assertSame(2, $bagian01->refresh()->realisasi);
     }
 
     public function test_summary_sheet_next_to_data_sheet_is_not_counted(): void
