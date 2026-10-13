@@ -255,6 +255,30 @@ class TargetDataTest extends TestCase
             ->assertHasErrors('uploads.0');
     }
 
+    public function test_large_project_excel_is_prepared_in_background_and_reused_until_data_changes(): void
+    {
+        $this->withoutDefer();
+        config(['fasih.sync_export_rows' => 0]);
+        $this->upload($this->targetWorkbook());
+        auth()->logout();
+
+        $this->get(route('projects.combined.export', $this->project()))
+            ->assertStatus(202)
+            ->assertHeader('Refresh', '3')
+            ->assertSee('Menyiapkan file');
+
+        $this->get(route('projects.combined.export', $this->project()))
+            ->assertOk()
+            ->assertDownload();
+
+        // Data berubah: file lama tidak dipakai, disiapkan ulang
+        $this->travel(1)->minute();
+        TargetRow::firstWhere('row_key', 'aaa-1')->update(['status' => 'closed']);
+
+        $this->get(route('projects.combined.export', $this->project()))->assertStatus(202);
+        $this->get(route('projects.combined.export', $this->project()))->assertOk()->assertDownload();
+    }
+
     public function test_guest_can_download_but_not_manage_reports(): void
     {
         $this->upload($this->targetWorkbook());
@@ -509,7 +533,8 @@ class TargetDataTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'application/json; charset=utf-8');
 
-        $queue = collect(json_decode($response->getContent(), true)['queue'])->keyBy('id');
+        $content = $response->streamedContent();
+        $queue = collect(json_decode($content, true)['queue'])->keyBy('id');
         $this->assertSame('closed', $queue['aaa-1']['status']);
         $this->assertSame('moved', $queue['bbb-2']['status']);
         $this->assertSame(2, $queue['aaa-1']['row']);
@@ -517,14 +542,14 @@ class TargetDataTest extends TestCase
         $this->assertSame('BUDI', $queue['ccc-3']['kelAnggota'], 'field asli laporan script ikut');
 
         // JSON gabungan semua unit pekerjaan
-        $all = collect(json_decode($this->get(route('projects.json', $this->project()))->assertOk()->getContent(), true)['queue'])->keyBy('id');
+        $all = collect(json_decode($this->get(route('projects.json', $this->project()))->assertOk()->streamedContent(), true)['queue'])->keyBy('id');
         $this->assertSame('HARUYAN', $all['aaa-1']['unit']);
         $this->assertSame('closed', $all['aaa-1']['status']);
 
         // Upload ulang JSON terkini: status sama persis
         $this->actingAs(User::first());
         $row->update(['status' => 'pending']);
-        $this->uploadReport(UploadedFile::fake()->createWithContent('status-terkini.json', $response->getContent()));
+        $this->uploadReport(UploadedFile::fake()->createWithContent('status-terkini.json', $content));
         $this->assertSame('closed', $row->refresh()->status);
     }
 

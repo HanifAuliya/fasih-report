@@ -5,12 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
+use App\Services\PreparedExport;
 use App\Support\XlsxStyleBook;
 use Illuminate\Support\Collection;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\XLSX\Writer;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Download satu Excel berisi data semua unit dalam satu pekerjaan (status terbaru).
@@ -21,7 +22,15 @@ class ProjectCombinedExportController extends Controller
 {
     private const STATUS_HEADERS = ['status_web', 'keterangan_web', 'waktu_status_web'];
 
-    public function __invoke(Project $project): BinaryFileResponse
+    public function __invoke(Project $project, PreparedExport $exports): Response
+    {
+        return $exports->serve($project, 'gabungan', fn () => $this->build($project));
+    }
+
+    /**
+     * @return array{path: string, filename: string}
+     */
+    private function build(Project $project): array
     {
         $config = $project->config();
         $statuses = $config->statuses();
@@ -62,28 +71,24 @@ class ProjectCombinedExportController extends Controller
 
             foreach ($sheets as $sheet) {
                 $unit = $units[$sheet->kecamatan_id];
+                $positions = $this->positions($sheet, $headers);
 
                 TargetRow::where('target_sheet_id', $sheet->id)
                     ->with('duplicateOf:id,nama')
                     ->orderBy('row_number')
-                    ->lazy(500)
-                    ->each(function (TargetRow $row) use ($writer, $sheet, $unit, $headers, $tracked, $statuses, $processColumn, $initialStatusColumn, &$written) {
-                        $cells = $this->cellsByHeader($sheet, $row);
+                    ->lazy(1000)
+                    ->each(function (TargetRow $row) use ($writer, $unit, $headers, $positions, $tracked, $statuses, $processColumn, $initialStatusColumn, &$written) {
+                        $cells = $this->cellsAt($row, $positions, count($headers));
 
                         if ($tracked && $processColumn !== false && $statuses->isDone($row->status)) {
-                            $cells[$headers[$processColumn]] = '0';
+                            $cells[$processColumn] = '0';
                         }
 
                         if ($tracked && $initialStatusColumn !== false && $statuses->hasAlias($row->status, 'dipindah')) {
-                            $cells[$headers[$initialStatusColumn]] = 'dipindah';
+                            $cells[$initialStatusColumn] = 'dipindah';
                         }
 
-                        $values = [
-                            $unit->kode,
-                            $unit->nama,
-                            $row->row_number,
-                            ...array_map(fn (string $header) => $cells[$header] ?? '', $headers),
-                        ];
+                        $values = [$unit->kode, $unit->nama, $row->row_number, ...$cells];
 
                         if (! $tracked) {
                             $writer->addRow(Row::fromValues($values));
@@ -118,9 +123,7 @@ class ProjectCombinedExportController extends Controller
 
         $writer->close();
 
-        $filename = sprintf('%s_gabungan_%s.xlsx', str($project->name)->slug('_'), now()->format('Ymd-Hi'));
-
-        return response()->download($path, $filename)->deleteFileAfterSend();
+        return ['path' => $path, 'filename' => sprintf('%s_gabungan_%s.xlsx', str($project->name)->slug('_'), now()->format('Ymd-Hi'))];
     }
 
     /**
@@ -140,16 +143,43 @@ class ProjectCombinedExportController extends Controller
     }
 
     /**
-     * @return array<string, mixed> nama header => isi sel
+     * Posisi tiap kolom sheet di header gabungan (judul kembar: yang pertama), dihitung sekali per sheet.
+     *
+     * @param  list<string>  $headers
+     * @return array<int, int> index kolom sheet => posisi di $headers
      */
-    private function cellsByHeader(TargetSheet $sheet, TargetRow $row): array
+    private function positions(TargetSheet $sheet, array $headers): array
     {
-        $cells = [];
+        $lookup = array_flip($headers);
+        $positions = [];
 
         foreach ($sheet->headers as $index => $header) {
-            $cells[(string) $header] ??= $row->cells[$index] ?? null;
+            $position = $lookup[(string) $header] ?? null;
+
+            if ($position !== null && ! in_array($position, $positions, true)) {
+                $positions[$index] = $position;
+            }
         }
 
-        return $cells;
+        return $positions;
+    }
+
+    /**
+     * Isi baris disusun mengikuti header gabungan; isi baris di-decode sekali (cast array Eloquent
+     * men-decode JSON di setiap akses).
+     *
+     * @param  array<int, int>  $positions
+     * @return list<mixed>
+     */
+    private function cellsAt(TargetRow $row, array $positions, int $width): array
+    {
+        $cells = $row->cells ?? [];
+        $values = array_fill(0, $width, '');
+
+        foreach ($positions as $index => $position) {
+            $values[$position] = $cells[$index] ?? '';
+        }
+
+        return $values;
     }
 }

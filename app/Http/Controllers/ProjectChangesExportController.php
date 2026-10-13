@@ -6,6 +6,7 @@ use App\Models\Kecamatan;
 use App\Models\Project;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
+use App\Services\PreparedExport;
 use App\Support\StatusSet;
 use App\Support\XlsxStyleBook;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,7 +14,7 @@ use Illuminate\Support\Collection;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\XLSX\Writer;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Download rekap semua baris (seluruh unit dalam satu pekerjaan) yang statusnya diubah oleh laporan JSON.
@@ -21,7 +22,15 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  */
 class ProjectChangesExportController extends Controller
 {
-    public function __invoke(Project $project): BinaryFileResponse
+    public function __invoke(Project $project, PreparedExport $exports): Response
+    {
+        return $exports->serve($project, 'rekap-perubahan', fn () => $this->build($project));
+    }
+
+    /**
+     * @return array{path: string, filename: string}
+     */
+    private function build(Project $project): array
     {
         $statuses = $project->config()->statuses();
         $unitLabel = $project->config()->unitLabel();
@@ -90,9 +99,7 @@ class ProjectChangesExportController extends Controller
 
         $writer->close();
 
-        $filename = sprintf('%s_rekap_perubahan_json_%s.xlsx', str($project->name)->slug('_'), now()->format('Ymd-Hi'));
-
-        return response()->download($path, $filename)->deleteFileAfterSend();
+        return ['path' => $path, 'filename' => sprintf('%s_rekap_perubahan_json_%s.xlsx', str($project->name)->slug('_'), now()->format('Ymd-Hi'))];
     }
 
     /**

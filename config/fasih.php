@@ -28,6 +28,10 @@ return [
     // Ukuran maksimal upload file report (KB)
     'max_upload_kb' => (int) env('FASIH_MAX_UPLOAD_KB', 20480),
 
+    // Download Excel satu pekerjaan dengan baris lebih dari ini disiapkan di latar belakang
+    // (lalu disimpan sampai datanya berubah) supaya tidak terputus batas waktu gateway (504)
+    'sync_export_rows' => (int) env('FASIH_SYNC_EXPORT_ROWS', 3000),
+
     // Token rahasia untuk endpoint POST /_deploy (dipanggil GitHub Actions setelah upload FTP).
     // Kosong = endpoint nonaktif.
     'deploy_token' => env('DEPLOY_TOKEN', ''),

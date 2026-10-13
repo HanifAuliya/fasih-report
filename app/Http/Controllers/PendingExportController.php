@@ -6,12 +6,13 @@ use App\Models\Kecamatan;
 use App\Models\Project;
 use App\Models\TargetRow;
 use App\Models\TargetSheet;
+use App\Services\PreparedExport;
 use App\Support\XlsxStyleBook;
 use Illuminate\Support\Collection;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\XLSX\Writer;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Download baris yang BELUM selesai (satu unit atau semua unit) untuk dimasukkan lagi ke userscript.
@@ -22,7 +23,22 @@ class PendingExportController extends Controller
 {
     private const EXTRA_HEADERS = ['status_web', 'keterangan_web', 'unit_web', 'baris_asli'];
 
-    public function __invoke(Project $project, ?string $kode = null): BinaryFileResponse
+    public function __invoke(Project $project, PreparedExport $exports, ?string $kode = null): Response
+    {
+        // Satu unit selalu kecil: langsung dibuat. Semua unit: disiapkan di latar belakang bila besar.
+        if ($kode === null) {
+            return $exports->serve($project, 'belum-selesai', fn () => $this->build($project, null));
+        }
+
+        ['path' => $path, 'filename' => $filename] = $this->build($project, $kode);
+
+        return response()->download($path, $filename)->deleteFileAfterSend();
+    }
+
+    /**
+     * @return array{path: string, filename: string}
+     */
+    private function build(Project $project, ?string $kode): array
     {
         $statuses = $project->config()->statuses();
         $units = $project->kecamatans()
@@ -61,15 +77,16 @@ class PendingExportController extends Controller
             foreach ($sheets as $sheet) {
                 /** @var Kecamatan $unit */
                 $unit = $units[$sheet->kecamatan_id];
+                $positions = $single ? null : $this->positions($sheet, $headers);
 
                 TargetRow::where('target_sheet_id', $sheet->id)
                     ->tracked()
                     ->where(fn ($query) => $query->whereNull('status')->orWhereNotIn('status', $statuses->doneCodes()))
                     ->orderBy('row_number')
-                    ->lazy(500)
-                    ->each(function (TargetRow $row) use ($writer, $sheet, $unit, $headers, $single, $statuses, &$written) {
+                    ->lazy(1000)
+                    ->each(function (TargetRow $row) use ($writer, $unit, $headers, $positions, $statuses, &$written) {
                         $values = [
-                            ...($single ? array_pad($row->cells, count($headers), null) : $this->cellsByHeader($sheet, $row, $headers)),
+                            ...($positions === null ? array_pad($row->cells ?? [], count($headers), null) : $this->cellsAt($row, $positions, count($headers))),
                             $row->status ? $statuses->label($row->status) : '',
                             $row->reason ?? '',
                             $unit->nama,
@@ -90,24 +107,48 @@ class PendingExportController extends Controller
         $writer->close();
 
         $scope = $kode !== null ? str($units->first()->nama)->slug('_') : 'semua';
-        $filename = sprintf('%s_%s_belum_selesai_%s.xlsx', str($project->name)->slug('_'), $scope, now()->format('Ymd-Hi'));
 
-        return response()->download($path, $filename)->deleteFileAfterSend();
+        return ['path' => $path, 'filename' => sprintf('%s_%s_belum_selesai_%s.xlsx', str($project->name)->slug('_'), $scope, now()->format('Ymd-Hi'))];
     }
 
     /**
+     * Posisi tiap kolom sheet di header gabungan (judul kembar: yang pertama), dihitung sekali per sheet.
+     *
      * @param  list<string>  $headers
-     * @return list<mixed>
+     * @return array<int, int> index kolom sheet => posisi di $headers
      */
-    private function cellsByHeader(TargetSheet $sheet, TargetRow $row, array $headers): array
+    private function positions(TargetSheet $sheet, array $headers): array
     {
-        $cells = [];
+        $lookup = array_flip($headers);
+        $positions = [];
 
         foreach ($sheet->headers as $index => $header) {
-            $cells[(string) $header] ??= $row->cells[$index] ?? null;
+            $position = $lookup[(string) $header] ?? null;
+
+            if ($position !== null && ! in_array($position, $positions, true)) {
+                $positions[$index] = $position;
+            }
         }
 
-        return array_map(fn (string $header) => $cells[$header] ?? '', $headers);
+        return $positions;
+    }
+
+    /**
+     * Isi baris disusun mengikuti header gabungan; isi baris di-decode sekali.
+     *
+     * @param  array<int, int>  $positions
+     * @return list<mixed>
+     */
+    private function cellsAt(TargetRow $row, array $positions, int $width): array
+    {
+        $cells = $row->cells ?? [];
+        $values = array_fill(0, $width, '');
+
+        foreach ($positions as $index => $position) {
+            $values[$position] = $cells[$index] ?? '';
+        }
+
+        return $values;
     }
 
     /**
