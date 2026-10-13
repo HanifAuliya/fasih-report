@@ -45,7 +45,7 @@ class PreparedExport
 
         $running = ($state['status'] ?? null) === 'running'
             && $state['version'] === $data['version']
-            && now()->subMinutes(self::STALE_MINUTES)->lt($state['at']);
+            && (int) ($state['at'] ?? 0) > now()->subMinutes(self::STALE_MINUTES)->getTimestamp();
 
         if (! $running) {
             $this->start($key, $project, $name, $data['version'], $build);
@@ -62,7 +62,7 @@ class PreparedExport
      */
     private function start(string $key, Project $project, string $name, string $version, Closure $build): void
     {
-        Cache::put($key, ['status' => 'running', 'version' => $version, 'at' => now()], now()->addHours(2));
+        Cache::put($key, ['status' => 'running', 'version' => $version, 'at' => now()->getTimestamp()], now()->addHours(2));
 
         defer(function () use ($key, $project, $name, $version, $build) {
             set_time_limit(0);
@@ -75,10 +75,10 @@ class PreparedExport
                 File::ensureDirectoryExists(dirname($path));
                 File::move($temp, $path);
 
-                Cache::put($key, ['status' => 'ready', 'version' => $version, 'path' => $path, 'filename' => $filename, 'at' => now()], now()->addDays(7));
+                Cache::put($key, ['status' => 'ready', 'version' => $version, 'path' => $path, 'filename' => $filename, 'at' => now()->getTimestamp()], now()->addDays(7));
             } catch (Throwable $e) {
                 report($e);
-                Cache::put($key, ['status' => 'failed', 'version' => $version, 'message' => $e->getMessage(), 'at' => now()], now()->addDay());
+                Cache::put($key, ['status' => 'failed', 'version' => $version, 'message' => $e->getMessage(), 'at' => now()->getTimestamp()], now()->addDay());
             }
         });
     }

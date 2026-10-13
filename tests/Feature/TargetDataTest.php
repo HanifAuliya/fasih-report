@@ -13,6 +13,7 @@ use App\Services\TargetImporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use OpenSpout\Common\Entity\Row;
@@ -270,6 +271,11 @@ class TargetDataTest extends TestCase
         $this->get(route('projects.combined.export', $this->project()))
             ->assertOk()
             ->assertDownload();
+
+        // Saat file masih disiapkan (status dibaca ulang dari cache), halaman tunggu tetap tampil
+        $key = 'export:'.$this->project()->id.':gabungan';
+        Cache::put($key, ['status' => 'running', 'version' => Cache::get($key)['version'], 'at' => now()->getTimestamp()]);
+        $this->get(route('projects.combined.export', $this->project()))->assertStatus(202);
 
         // Data berubah: file lama tidak dipakai, disiapkan ulang
         $this->travel(1)->minute();
