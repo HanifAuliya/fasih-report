@@ -45,7 +45,7 @@ class PreparedExport
 
         $running = ($state['status'] ?? null) === 'running'
             && $state['version'] === $data['version']
-            && (int) ($state['at'] ?? 0) > now()->subMinutes(self::STALE_MINUTES)->getTimestamp();
+            && is_int($state['at'] ?? null) && $state['at'] > now()->subMinutes(self::STALE_MINUTES)->getTimestamp();
 
         if (! $running) {
             $this->start($key, $project, $name, $data['version'], $build);
