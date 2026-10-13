@@ -201,23 +201,40 @@
 
         <div class="flex flex-wrap items-center justify-end gap-3">
             <p class="mr-auto text-xs text-slate-500">Setelah mengubah kolom kunci / status, klik <b>Proses ulang semua file</b> supaya data lama ikut menyesuaikan.</p>
-            <button type="button" x-on:click="$confirm({{ \Illuminate\Support\Js::from('Impor ulang semua Excel lalu terapkan ulang semua laporan dengan pengaturan yang tersimpan?') }}, () => $wire.reprocessAll(), {})" class="btn-secondary" wire:loading.attr="disabled" wire:target="reprocessAll">
+            <button type="button" x-on:click="$confirm({{ \Illuminate\Support\Js::from('Hitung ulang semua baris lalu terapkan ulang semua laporan dengan pengaturan yang tersimpan? Berjalan di latar belakang.') }}, () => $wire.reprocessAll(), {})" class="btn-secondary" wire:loading.attr="disabled" wire:target="reprocessAll" @disabled($reprocessRunning)>
                 <x-icon name="history" class="size-4" />
-                <span wire:loading.remove wire:target="reprocessAll">Proses ulang semua file</span>
-                <span wire:loading wire:target="reprocessAll">Memproses…</span>
+                <span>{{ $reprocessRunning ? 'Sedang diproses…' : 'Proses ulang semua file' }}</span>
             </button>
             <button type="submit" class="btn-primary">Simpan pengaturan</button>
         </div>
     </form>
 
-    @if ($processLog)
-        <div class="card p-5">
-            <h3 class="text-sm font-semibold text-slate-900">Hasil proses ulang</h3>
-            <ul class="mt-3 space-y-1.5 text-xs text-slate-600">
-                @foreach ($processLog as $line)
-                    <li @class(['text-rose-600' => str_contains($line, 'Gagal')])>{{ $line }}</li>
-                @endforeach
-            </ul>
+    @if ($reprocess)
+        <div class="card p-5" @if ($reprocessRunning) wire:poll.3s @endif>
+            @if ($reprocessRunning)
+                @php $percent = $reprocess['total'] ? (int) floor($reprocess['done'] / $reprocess['total'] * 100) : 0; @endphp
+                <div class="flex items-center justify-between gap-3 text-sm">
+                    <span class="flex items-center gap-2 font-semibold text-slate-900">
+                        <svg class="size-4 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".25" stroke-width="3" /><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>
+                        Memproses ulang di latar belakang…
+                    </span>
+                    <span class="text-xs text-slate-500 tabular-nums">{{ $reprocess['done'] }} / {{ $reprocess['total'] }} {{ strtolower($unitLabel) }}</span>
+                </div>
+                <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div class="h-full rounded-full bg-brand-500 transition-[width] duration-500" style="width: {{ $percent }}%"></div>
+                </div>
+                <p class="mt-2 text-xs text-slate-500">Halaman ini boleh ditutup; proses tetap berjalan di server.</p>
+            @else
+                <div class="flex items-start justify-between gap-3">
+                    <h3 class="text-sm font-semibold text-slate-900">Hasil proses ulang</h3>
+                    <button type="button" wire:click="dismissReprocess" class="btn-icon size-7" title="Tutup"><x-icon name="x" class="size-3.5" /></button>
+                </div>
+                <ul class="mt-3 max-h-80 space-y-1.5 overflow-y-auto text-xs text-slate-600">
+                    @foreach ($reprocess['log'] as $line)
+                        <li @class(['text-rose-600' => str_contains($line, 'Gagal')])>{{ $line }}</li>
+                    @endforeach
+                </ul>
+            @endif
         </div>
     @endif
 </div>

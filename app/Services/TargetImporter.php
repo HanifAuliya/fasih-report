@@ -124,6 +124,7 @@ class TargetImporter
         });
 
         $kecamatan->syncProgressFromTargets();
+        ReportFile::forgetForwards($kecamatan->project_id);
 
         return $summary;
     }

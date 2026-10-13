@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Support\ProjectSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use OpenSpout\Common\Entity\Row;
@@ -38,6 +39,7 @@ class ProjectSettingsTest extends TestCase
         parent::setUp();
 
         $this->withoutVite();
+        $this->withoutDefer();
         Storage::fake('local');
         $this->actingAs(User::first());
     }
@@ -280,6 +282,7 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame('pending', $rows['BAGIAN 01|TOKO PLASTIK (HAIRIL)']->status, 'usaha lain di assignment yang sama tidak ikut');
         $this->assertSame('pending', $rows['BAGIAN 01|ROTI KASUR']->status);
         $this->assertSame($bagian2->id, $bagian2->reports()->sole()->kecamatan_id);
+        $this->assertSame([], $bagian2->reports()->sole()->forwarded_units, 'laporan Bagian 2 tidak menyentuh Bagian lain');
         $this->assertSame(0, $bagian1->reports()->count());
 
         // Laporan Bagian 1 tetap bisa diupload sesudahnya tanpa menghapus hasil Bagian 2
@@ -359,6 +362,7 @@ class ProjectSettingsTest extends TestCase
         $this->assertTrue($project->config()->statuses()->isDone('yellow'));
         $this->assertSame(3, $project->kecamatans()->sole()->realisasi);
         $this->assertSame('yellow', TargetRow::firstWhere('row_key', self::UUID_C)->status);
+        $this->assertSame('done', Cache::get(ProjectSettingsForm::reprocessKey($project))['status']);
     }
 
     public function test_switching_key_mode_rekeys_existing_rows_on_save(): void

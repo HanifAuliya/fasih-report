@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Kecamatan;
+use App\Models\Project;
 use App\Models\ReportFile;
 use App\Support\ProjectSettings;
 use Illuminate\Http\UploadedFile;
@@ -72,6 +73,7 @@ class UnitReportService
 
                 // Kunci baris mungkin masih dari pengaturan lama: hitung ulang lalu coba sekali lagi
                 if ($result['matched'] === 0 && $result['records'] > 0 && $this->targetImporter->rekey($unit) > 0) {
+                    ReportFile::forgetForwards($unit->project_id);
                     $result = $this->rebuild($unit, $file);
                 }
 
@@ -121,6 +123,32 @@ class UnitReportService
     }
 
     /**
+     * Proses ulang seluruh pekerjaan: hitung ulang kunci baris semua unit dulu, baru terapkan ulang laporan
+     * tiap unit (supaya catatan penerusan antar unit cukup dihitung sekali).
+     *
+     * @param  (callable(int $done, int $total, string $line): void)|null  $progress
+     * @return list<string>
+     */
+    public function reprocessProject(Project $project, ?callable $progress = null): array
+    {
+        $units = $project->kecamatans()->whereHas('targetRows')->get();
+        $rekeyed = $units->mapWithKeys(fn (Kecamatan $unit) => [$unit->id => $this->targetImporter->rekey($unit)]);
+        ReportFile::forgetForwards($project->id);
+        $log = [];
+
+        foreach ($units->values() as $index => $unit) {
+            $log[] = $line = $unit->nama.($rekeyed[$unit->id] ? " ({$rekeyed[$unit->id]} kunci baris diperbarui)" : '').': '
+                .($this->reapply($unit) ?? 'belum ada laporan, status dari Excel awal');
+
+            if ($progress) {
+                $progress($index + 1, $units->count(), $line);
+            }
+        }
+
+        return $log;
+    }
+
+    /**
      * Terapkan ulang semua laporan aktif unit (dipakai setelah Excel/pengaturan diproses ulang).
      */
     public function reapply(Kecamatan $unit): ?string
@@ -157,6 +185,7 @@ class UnitReportService
             ->where('is_active', true)
             ->orderBy('id')
             ->get()
+            ->filter(fn (ReportFile $report) => $report->forwardsTo($unit->id))
             ->each(fn (ReportFile $report) => $this->statusImporter->applyTo($report, $unit));
 
         $unit->syncProgressFromTargets();

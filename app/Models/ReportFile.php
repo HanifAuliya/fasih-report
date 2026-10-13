@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['project_id', 'kecamatan_id', 'category', 'original_name', 'path', 'extension', 'size', 'notes', 'summary', 'header_row', 'is_active', 'uploaded_by'])]
+#[Fillable(['project_id', 'kecamatan_id', 'category', 'original_name', 'path', 'extension', 'size', 'notes', 'summary', 'header_row', 'is_active', 'forwarded_units', 'uploaded_by'])]
 class ReportFile extends Model
 {
     public const CATEGORIES = [
@@ -34,7 +34,24 @@ class ReportFile extends Model
     {
         return [
             'is_active' => 'boolean',
+            'forwarded_units' => 'array',
         ];
+    }
+
+    /**
+     * Apakah laporan (milik unit lain) mungkin mengubah baris unit ini; null = belum diketahui, anggap ya.
+     */
+    public function forwardsTo(int $unitId): bool
+    {
+        return $this->forwarded_units === null || in_array($unitId, $this->forwarded_units, true);
+    }
+
+    /**
+     * Lupakan catatan penerusan semua laporan pekerjaan (setelah baris/kunci berubah).
+     */
+    public static function forgetForwards(int $projectId): void
+    {
+        static::where('project_id', $projectId)->whereNotNull('forwarded_units')->update(['forwarded_units' => null]);
     }
 
     public function isStatusReport(): bool

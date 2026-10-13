@@ -5,13 +5,16 @@ namespace App\Livewire\Projects;
 use App\Enums\ProjectType;
 use App\Models\Project;
 use App\Models\TargetSheet;
-use App\Services\TargetImporter;
 use App\Services\UnitReportService;
 use App\Support\ProjectSettings;
 use App\Support\StatusSet;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
+use Throwable;
+
+use function Illuminate\Support\defer;
 
 /**
  * Pengaturan cara membaca Excel & laporan per manajemen data, supaya bisa disesuaikan tiap kasus.
@@ -47,8 +50,8 @@ class ProjectSettingsForm extends Component
     /** @var list<array{code: string, label: string, color: string, done: bool, aliases: string}> */
     public array $statuses = [];
 
-    /** @var list<string> */
-    public array $processLog = [];
+    /** Proses ulang sedang berjalan saat render terakhir (untuk memberi tahu komponen lain saat selesai). */
+    public bool $reprocessRunning = false;
 
     public function mount(): void
     {
@@ -161,8 +164,8 @@ class ProjectSettingsForm extends Component
 
         // Cara pencocokan / status berubah: data lama langsung disesuaikan, tanpa perlu klik "Proses ulang"
         if ($before !== $this->matchingSettings($this->project->refresh()->config())) {
-            $this->reprocessAll(app(TargetImporter::class), app(UnitReportService::class));
-            $this->dispatch('toast', message: 'Pengaturan disimpan & data diproses ulang');
+            $this->startReprocess(app(UnitReportService::class));
+            $this->dispatch('toast', message: 'Pengaturan disimpan, data sedang diproses ulang…');
 
             return;
         }
@@ -194,23 +197,57 @@ class ProjectSettingsForm extends Component
     }
 
     /**
-     * Hitung ulang kunci baris (dari isi baris yang tersimpan, tanpa membaca file Excel lagi)
-     * lalu terapkan ulang laporan aktif tiap unit; dipakai setelah pengaturan kunci/status diubah.
+     * Hitung ulang kunci baris (dari isi baris yang tersimpan, tanpa membaca file Excel lagi) lalu terapkan
+     * ulang laporan tiap unit. Berjalan setelah respons terkirim (tanpa batas waktu gateway); progres di cache.
      */
-    public function reprocessAll(TargetImporter $importer, UnitReportService $unitReports): void
+    public function reprocessAll(UnitReportService $unitReports): void
     {
         $this->authorize('manage');
 
-        $this->processLog = [];
+        $this->startReprocess($unitReports);
+        $this->dispatch('toast', message: 'Proses ulang berjalan di latar belakang…');
+    }
 
-        foreach ($this->project->kecamatans()->whereHas('targetRows')->get() as $unit) {
-            $rekeyed = $importer->rekey($unit);
-            $this->processLog[] = $unit->nama.($rekeyed ? " ({$rekeyed} kunci baris diperbarui)" : '').': '
-                .($unitReports->reapply($unit) ?? 'belum ada laporan aktif, status dari Excel awal');
+    public static function reprocessKey(Project $project): string
+    {
+        return "reprocess:{$project->id}";
+    }
+
+    private function startReprocess(UnitReportService $unitReports): void
+    {
+        $key = self::reprocessKey($this->project);
+
+        if ((Cache::get($key)['status'] ?? null) === 'running') {
+            return;
         }
 
-        $this->dispatch('toast', message: count($this->processLog).' file diproses ulang');
-        $this->dispatch('project-updated');
+        $total = $this->project->kecamatans()->whereHas('targetRows')->count();
+        Cache::put($key, ['status' => 'running', 'done' => 0, 'total' => $total, 'log' => []], now()->addHours(2));
+        $this->reprocessRunning = true;
+        $project = $this->project;
+
+        defer(function () use ($project, $unitReports, $key) {
+            set_time_limit(0);
+            ignore_user_abort(true);
+
+            try {
+                $log = $unitReports->reprocessProject($project, function (int $done, int $total) use ($key) {
+                    Cache::put($key, ['status' => 'running', 'done' => $done, 'total' => $total, 'log' => []], now()->addHours(2));
+                });
+
+                Cache::put($key, ['status' => 'done', 'done' => count($log), 'total' => count($log), 'log' => $log], now()->addDay());
+            } catch (Throwable $e) {
+                report($e);
+                Cache::put($key, ['status' => 'failed', 'done' => 0, 'total' => 0, 'log' => ['Gagal: '.$e->getMessage()]], now()->addDay());
+            }
+        });
+    }
+
+    public function dismissReprocess(): void
+    {
+        if ((Cache::get(self::reprocessKey($this->project))['status'] ?? null) !== 'running') {
+            Cache::forget(self::reprocessKey($this->project));
+        }
     }
 
     public function render(): View
@@ -222,7 +259,20 @@ class ProjectSettingsForm extends Component
             ->unique()
             ->values();
 
+        /** @var array{status: string, done: int, total: int, log: list<string>}|null $reprocess */
+        $reprocess = Cache::get(self::reprocessKey($this->project));
+        $running = ($reprocess['status'] ?? null) === 'running';
+
+        // Baru selesai: tabel & grafik di komponen lain ikut diperbarui
+        if ($this->reprocessRunning && ! $running) {
+            $this->dispatch('project-updated');
+            $this->dispatch('toast', message: 'Proses ulang selesai');
+        }
+
+        $this->reprocessRunning = $running;
+
         return view('livewire.projects.project-settings-form', [
+            'reprocess' => $reprocess,
             'headers' => $headers,
             'presets' => ProjectType::cases(),
             'colors' => array_keys(StatusSet::COLORS),

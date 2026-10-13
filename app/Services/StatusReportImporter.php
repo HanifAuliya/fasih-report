@@ -51,6 +51,14 @@ class StatusReportImporter
      */
     private array $contentIndex = [];
 
+    /**
+     * Isi laporan yang sudah dibaca (per id file) beserta statistiknya, supaya satu laporan tidak dibaca
+     * berulang saat banyak unit dihitung ulang sekaligus.
+     *
+     * @var array<int, array{records: array<string, mixed>, stats: array{items: int, without_key: int, unknown_statuses: array<string, int>, sample_keys: list<string>}}>
+     */
+    private array $parsed = [];
+
     /** Field nama pembeda di laporan (mis. targets[].nama = Nama usaha), selain nama kolom pembeda itu sendiri. */
     private const DETAIL_NAME_FIELDS = ['nama', 'nama_usaha', 'namaUsaha'];
 
@@ -110,6 +118,7 @@ class StatusReportImporter
 
         $unit->syncProgressFromTargets();
         $touched->each(fn (Kecamatan $other) => $other->syncProgressFromTargets());
+        $this->rememberForwards($file, $targets, $unit);
 
         return $summary;
     }
@@ -125,11 +134,21 @@ class StatusReportImporter
         }
 
         $home = $file->kecamatan ?? $owner;
+
+        if ($home->id !== $owner->id && ! $file->forwardsTo($owner->id)) {
+            return 0;
+        }
+
         $records = $this->records($file, $home);
         $defaultCode = $owner->project->config()->statuses()->defaultCode();
         $applied = 0;
+        $targets = $this->targetRows($records, $home);
 
-        foreach ($this->targetRows($records, $home) as $rowKey => $rows) {
+        if ($file->forwarded_units === null) {
+            $this->rememberForwards($file, $targets, $home);
+        }
+
+        foreach ($targets as $rowKey => $rows) {
             foreach ($rows->where('kecamatan_id', $owner->id) as $row) {
                 $applied += $this->apply($row, $records[$rowKey], $file, $defaultCode) ? 1 : 0;
             }
@@ -140,6 +159,18 @@ class StatusReportImporter
         }
 
         return $applied;
+    }
+
+    /**
+     * Simpan unit lain yang baris-barisnya disentuh laporan ini.
+     *
+     * @param  array<string, Collection<int, TargetRow>>  $targets
+     */
+    private function rememberForwards(ReportFile $file, array $targets, Kecamatan $home): void
+    {
+        $units = collect($targets)->flatten(1)->pluck('kecamatan_id')->reject(fn ($id) => $id === $home->id)->unique()->values()->all();
+
+        $file->forceFill(['forwarded_units' => $units])->saveQuietly();
     }
 
     /**
@@ -359,7 +390,13 @@ class StatusReportImporter
      */
     private function records(ReportFile $file, Kecamatan $unit): array
     {
-        $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $unit->project->config());
+        if (! isset($this->parsed[$file->id])) {
+            $records = $this->parse(Storage::disk('local')->get($file->path), $file->extension, $unit->project->config());
+            $this->parsed[$file->id] = ['records' => $records, 'stats' => $this->lastParse];
+        }
+
+        $records = $this->parsed[$file->id]['records'];
+        $this->lastParse = $this->parsed[$file->id]['stats'];
 
         return $this->expandAnyDetail($this->forUnitSheet($records, $unit), $unit->project_id);
     }
