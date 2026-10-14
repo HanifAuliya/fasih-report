@@ -306,17 +306,27 @@ class TargetImporter
             $sheet->update(['tracked' => $this->isTrackable($sheet, $settings, $columns, $hasDataSheet)]);
 
             TargetRow::where('target_sheet_id', $sheet->id)
-                ->select(['id', 'row_number', 'row_key', 'duplicate_of_id', 'not_ready', 'cells'])
+                ->select(['id', 'row_number', 'row_key', 'duplicate_of_id', 'not_ready', 'status', 'cells'])
                 ->chunkById(500, function ($rows) use ($sheet, $settings, $columns, $owners, &$changed) {
                     foreach ($rows as $row) {
                         [$rowKey, $notReady] = $this->rowKeyFor($sheet, $row->cells, $row->row_number, $settings, $columns);
                         $duplicateOf = $rowKey !== null ? ($owners[$rowKey] ?? null) : null;
 
-                        if ($rowKey !== $row->row_key || $duplicateOf !== $row->duplicate_of_id || $notReady !== $row->not_ready) {
-                            // Baris yang tidak lagi dilacak (atau jadi kembar) tidak membawa status lama
-                            TargetRow::whereKey($row->id)->update($rowKey === null || $duplicateOf !== null
-                                ? ['row_key' => $rowKey, 'duplicate_of_id' => $duplicateOf, 'not_ready' => $notReady, 'status' => null, 'reason' => null, 'status_at' => null, 'status_file_id' => null]
-                                : ['row_key' => $rowKey, 'duplicate_of_id' => null, 'not_ready' => false]);
+                        $counted = $rowKey !== null && $duplicateOf === null;
+                        // Baris yang baru dihitung (mis. pemilik kembarnya dihapus) belum punya status: isi status awalnya
+                        $needsStatus = $counted && $row->status === null;
+
+                        if ($rowKey !== $row->row_key || $duplicateOf !== $row->duplicate_of_id || $notReady !== $row->not_ready || $needsStatus) {
+                            $update = $counted
+                                ? ['row_key' => $rowKey, 'duplicate_of_id' => null, 'not_ready' => false]
+                                // Baris yang tidak lagi dilacak (atau jadi kembar) tidak membawa status lama
+                                : ['row_key' => $rowKey, 'duplicate_of_id' => $duplicateOf, 'not_ready' => $notReady, 'status' => null, 'reason' => null, 'status_at' => null, 'status_file_id' => null];
+
+                            if ($needsStatus) {
+                                [$update['status'], $update['reason']] = $this->initialStatus($sheet, $row->cells, $settings);
+                            }
+
+                            TargetRow::whereKey($row->id)->update($update);
                             $changed++;
                         }
                     }

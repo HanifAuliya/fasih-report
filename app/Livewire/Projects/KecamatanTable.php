@@ -6,6 +6,8 @@ use App\Models\Kecamatan;
 use App\Models\Project;
 use App\Models\TargetRow;
 use App\Services\ReportFileProcessor;
+use App\Services\TargetImporter;
+use App\Services\UnitReportService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
@@ -164,11 +166,21 @@ class KecamatanTable extends Component
         $this->changed(count($this->uploadResults).' file diproses');
     }
 
-    public function delete(int $id): void
+    public function delete(int $id, TargetImporter $importer, UnitReportService $unitReports): void
     {
         $this->authorize('manage');
 
-        $this->project->kecamatans()->findOrFail($id)->delete();
+        $unit = $this->project->kecamatans()->findOrFail($id);
+        // Unit lain yang barisnya kembar dengan unit ini: sesudah dihapus, baris itu jadi miliknya sendiri
+        $affected = TargetRow::where('duplicate_of_id', $unit->id)->distinct()->pluck('kecamatan_id');
+
+        $unit->delete();
+
+        foreach (Kecamatan::whereKey($affected)->get() as $other) {
+            $importer->rekey($other);
+            $unitReports->reapply($other);
+        }
+
         $this->changed('Kecamatan dihapus');
     }
 

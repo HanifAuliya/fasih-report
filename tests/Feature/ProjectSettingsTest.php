@@ -313,6 +313,35 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame([self::UUID_A, self::UUID_B], TargetRow::orderBy('row_number')->pluck('row_key')->all());
     }
 
+    public function test_deleting_owner_unit_gives_duplicate_rows_their_status_back(): void
+    {
+        $project = $this->createProject();
+        $workbook = function (string $name, array $uuids): UploadedFile {
+            $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+            $writer = new Writer;
+            $writer->openToFile($path);
+            $writer->addRow(Row::fromValues(['nama_usaha', 'bku_link']));
+            foreach ($uuids as $uuid) {
+                $writer->addRow(Row::fromValues(['TOKO', 'https://fasih-sm.bps.go.id/app/assignment-detail/'.$uuid]));
+            }
+            $writer->close();
+
+            return UploadedFile::fake()->createWithContent($name, file_get_contents($path));
+        };
+
+        // File gabungan dulu, lalu file pecahan yang barisnya sudah ada di file gabungan
+        $this->upload($project, $workbook('Tidak ditemukan ke TUTUP.xlsx', [self::UUID_A, self::UUID_B]));
+        $this->upload($project, $workbook('TES_1_skor_95-99.xlsx', [self::UUID_A, self::UUID_C]));
+        [$whole, $part] = $project->kecamatans()->orderBy('kode')->get()->all();
+        $this->assertSame(1, $part->refresh()->target, 'baris UUID_A kembar, dihitung di file gabungan');
+
+        Livewire::test(KecamatanTable::class, ['project' => $project])->call('delete', $whole->id);
+
+        $rows = TargetRow::where('kecamatan_id', $part->id)->tracked()->get();
+        $this->assertSame(2, $part->refresh()->target);
+        $this->assertSame(['pending', 'pending'], $rows->pluck('status')->all(), 'status awal terisi, tidak kosong');
+    }
+
     public function test_extra_conditions_limit_target_rows(): void
     {
         // BKU: hanya "0. Tidak Ditemukan" dengan skor_kecocokan 80-99 yang dikerjakan script
