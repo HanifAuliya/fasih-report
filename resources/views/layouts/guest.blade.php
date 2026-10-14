@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Masuk · {{ config('app.name') }}</title>
 
+    <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <x-theme-script />
     @fonts
 
@@ -15,14 +16,13 @@
 
 <body class="min-h-screen bg-(--page) font-sans text-slate-800 antialiased">
     <x-icon-sprite />
+    <x-loading-screen />
     <div class="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {{-- Panel identitas --}}
         <aside class="relative hidden overflow-hidden bg-brand-600 p-12 text-white lg:flex lg:flex-col">
 
             <div class="relative flex items-center gap-3">
-                <span class="flex size-10 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-                    <x-icon name="chart" class="size-5" />
-                </span>
+                <x-logo class="size-10 rounded-xl ring-1 ring-white/30" />
                 <span class="text-lg font-semibold tracking-tight">FASIH Report</span>
             </div>
 

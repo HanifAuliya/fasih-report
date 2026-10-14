@@ -103,12 +103,24 @@ themeMedia.addEventListener('change', () => applyTheme(readTheme()));
 
 // wire:navigate mengganti atribut <html> dengan milik halaman baru (class "dark" & "sidebar-collapsed"
 // ikut hilang), jadi pasang ulang tepat saat halaman ditukar supaya tidak berkedip / melompat.
-const applyShell = () => (window.applyShellPrefs ? window.applyShellPrefs() : applyTheme(readTheme()));
+const applyShell = () => {
+    window.applyShellPrefs ? window.applyShellPrefs() : applyTheme(readTheme());
+    document.documentElement.classList.add('app-ready');
+};
 
+// Layar memuat (komponen loading-screen): tampil selama pindah halaman, hilang begitu halaman baru siap
+const html = document.documentElement;
+document.addEventListener('DOMContentLoaded', () => html.classList.add('app-ready'));
+document.addEventListener('livewire:navigate', () => html.classList.add('is-navigating'));
 document.addEventListener('livewire:navigating', (event) => {
     event.detail?.onSwap?.(applyShell);
 });
-document.addEventListener('livewire:navigated', applyShell);
+document.addEventListener('livewire:navigated', () => {
+    applyShell();
+    html.classList.remove('is-navigating');
+});
+// Kembali lewat tombol Back (halaman dari cache browser): jangan tertahan di layar memuat
+window.addEventListener('pageshow', () => html.classList.remove('is-navigating'));
 
 document.addEventListener('alpine:init', () => {
     Alpine.store('theme', {

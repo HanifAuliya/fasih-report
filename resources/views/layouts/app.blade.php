@@ -7,6 +7,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ isset($title) ? $title.' · ' : '' }}{{ config('app.name') }}</title>
 
+    <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <x-theme-script />
     @fonts
 
@@ -25,6 +26,7 @@
     }"
     x-on:keydown.window.prevent.ctrl.b="toggleCollapsed()">
     <x-icon-sprite />
+    <x-loading-screen />
 
     {{-- Overlay sidebar mobile --}}
     <div x-show="sidebar" x-transition.opacity x-cloak class="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px] lg:hidden" @click="sidebar = false"></div>
@@ -36,9 +38,7 @@
         {{-- Brand --}}
         <div class="flex h-14 shrink-0 items-center gap-2 px-3 lg:sb-collapsed:justify-center lg:sb-collapsed:px-0">
             <a href="{{ route('dashboard') }}" wire:navigate class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1 transition hover:bg-slate-200/50 lg:sb-collapsed:flex-none">
-                <span class="relative flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-brand-600 text-white shadow-sm">
-                    <x-icon name="chart" class="relative size-4" />
-                </span>
+                <x-logo class="size-7 shrink-0 rounded-lg shadow-sm" />
                 <span class="min-w-0 leading-tight lg:sb-collapsed:hidden">
                     <span class="block truncate text-[13.5px] font-semibold tracking-tight text-slate-900">FASIH Report</span>
                     <span class="block truncate text-[11px] text-slate-500">Pelacak tindak lanjut</span>

@@ -1,7 +1,5 @@
 <div class="w-full max-w-sm">
-    <span class="mb-8 flex size-11 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm lg:hidden">
-        <x-icon name="chart" class="size-5" />
-    </span>
+    <x-logo class="mb-8 size-11 rounded-xl shadow-sm lg:hidden" />
 
     <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Masuk sebagai admin</h1>
     <p class="mt-1.5 text-sm text-slate-500">Login hanya diperlukan untuk mengubah data. Semua orang tetap bisa melihat progress tanpa login.</p>

@@ -7,6 +7,7 @@
     <meta name="robots" content="noindex">
     <title>Menyiapkan file · {{ config('app.name') }}</title>
 
+    <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <x-theme-script />
     @fonts
 
