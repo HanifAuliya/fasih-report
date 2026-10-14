@@ -132,7 +132,7 @@ class TargetImporter
     /**
      * Posisi kolom yang dipakai untuk menentukan kunci baris di satu sheet.
      *
-     * @return array{key: ?int, detail: ?int, task: ?int, required: array<string, int>}
+     * @return array{key: ?int, detail: ?int, task: ?int, required: array<string, int>, conditions: list<array{index: int, column: string, operator: string, value: string}>}
      */
     private function matchingColumns(TargetSheet $sheet, ProjectSettings $settings): array
     {
@@ -148,6 +148,11 @@ class TargetImporter
             'key' => $this->keyColumnIndex($sheet, $settings),
             'detail' => $settings->keyDetailColumn() !== null ? $sheet->columnIndex($settings->keyDetailColumn()) : null,
             'task' => $settings->taskColumn() !== null ? $sheet->columnIndex($settings->taskColumn()) : null,
+            // Syarat yang kolomnya tidak ada di sheet ini diabaikan (seperti kolom penanda)
+            'conditions' => array_values(array_filter(array_map(
+                fn (array $condition) => ($index = $sheet->columnIndex($condition['column'])) !== null ? [...$condition, 'index' => $index] : null,
+                $settings->taskConditions(),
+            ))),
             'required' => $required,
         ];
     }
@@ -182,7 +187,7 @@ class TargetImporter
      * Kunci baris (null = tidak dihitung) & apakah baris "belum siap" (dikerjakan tapi kolom wajib kosong).
      *
      * @param  list<mixed>  $cells
-     * @param  array{key: ?int, detail: ?int, task: ?int, required: array<string, int>}  $columns
+     * @param  array{key: ?int, detail: ?int, task: ?int, required: array<string, int>, conditions: list<array{index: int, column: string, operator: string, value: string}>}  $columns
      * @return array{0: ?string, 1: bool}
      */
     private function rowKeyFor(TargetSheet $sheet, array $cells, int $rowNumber, ProjectSettings $settings, array $columns): array
@@ -194,6 +199,13 @@ class TargetImporter
         // Bukan baris yang perlu dikerjakan (mis. Edit KBLI ≠ 1): tampil, tidak dihitung
         if ($columns['task'] !== null && ! $settings->isTaskValue($cells[$columns['task']] ?? null)) {
             return [null, false];
+        }
+
+        // Tidak lolos saringan tambahan (mis. skor_kecocokan < 80): tampil, tidak dihitung
+        foreach ($columns['conditions'] as $condition) {
+            if (! ProjectSettings::meetsCondition($cells[$condition['index']] ?? null, $condition)) {
+                return [null, false];
+            }
         }
 
         // Perlu dikerjakan tapi isian wajib kosong (mis. KBLI Baru): belum siap, belum dihitung

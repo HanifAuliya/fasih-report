@@ -43,6 +43,8 @@ class ProjectSettingsForm extends Component
 
     public string $taskValues = '';
 
+    public string $taskConditions = '';
+
     public string $requiredColumns = '';
 
     public string $displayColumns = '';
@@ -77,6 +79,7 @@ class ProjectSettingsForm extends Component
         $this->initialStatusColumn = (string) $config->initialStatusColumn();
         $this->taskColumn = (string) $config->taskColumn();
         $this->taskValues = implode(', ', $config->taskValues());
+        $this->taskConditions = implode('; ', array_map(fn (array $condition) => "{$condition['column']} {$condition['operator']} {$condition['value']}", $config->taskConditions()));
         $this->requiredColumns = implode(', ', $config->requiredColumns());
         $this->displayColumns = implode(', ', $config->displayColumns());
         $this->statuses = $config->statuses()->all()
@@ -129,6 +132,13 @@ class ProjectSettingsForm extends Component
             'initialStatusColumn' => ['nullable', 'string', 'max:100'],
             'taskColumn' => ['nullable', 'string', 'max:100'],
             'taskValues' => [Rule::requiredIf($this->taskColumn !== ''), 'nullable', 'string', 'max:200'],
+            'taskConditions' => ['nullable', 'string', 'max:500', function (string $attribute, mixed $value, \Closure $fail): void {
+                foreach (ProjectSettings::toConditionList($value) as $condition) {
+                    if (ProjectSettings::parseCondition($condition) === null) {
+                        $fail("Syarat \"{$condition}\" tidak bisa dibaca. Contoh: skor_kecocokan >= 80");
+                    }
+                }
+            }],
             'requiredColumns' => ['nullable', 'string', 'max:300'],
             'displayColumns' => ['nullable', 'string', 'max:2000'],
             'statuses' => ['required', 'array', 'min:1'],
@@ -157,6 +167,7 @@ class ProjectSettingsForm extends Component
             'initial_status_column' => $this->initialStatusColumn,
             'task_column' => $this->taskColumn,
             'task_values' => ProjectSettings::toList($this->taskValues),
+            'task_conditions' => ProjectSettings::toConditionList($this->taskConditions),
             'required_columns' => ProjectSettings::toList($this->requiredColumns),
             'display_columns' => ProjectSettings::toList($this->displayColumns),
             'statuses' => $this->statuses,
@@ -191,6 +202,7 @@ class ProjectSettingsForm extends Component
             'initial_status_column' => $config->initialStatusColumn(),
             'task_column' => $config->taskColumn(),
             'task_values' => $config->taskValues(),
+            'task_conditions' => $config->taskConditions(),
             'required_columns' => $config->requiredColumns(),
             'statuses' => $config->statuses()->toArray(),
         ];

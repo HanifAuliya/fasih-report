@@ -33,6 +33,7 @@ class ProjectSettings
         'initial_status_column' => null,
         'task_column' => null,
         'task_values' => ['1', 'ya', 'true'],
+        'task_conditions' => [],
         'required_columns' => [],
         'display_columns' => [],
         'statuses' => [],
@@ -113,6 +114,80 @@ class ProjectSettings
     public function taskValues(): array
     {
         return array_map('strtolower', self::toList($this->settings['task_values'] ?? self::DEFAULTS['task_values']));
+    }
+
+    /** Pembanding yang didukung saringan tambahan (yang dua karakter dicek dulu). */
+    public const CONDITION_OPERATORS = ['>=', '<=', '!=', '=', '>', '<'];
+
+    /**
+     * Saringan tambahan baris target, mis. "skor_kecocokan >= 80": baris yang tidak memenuhi semua syarat
+     * tetap tampil, tapi tidak dihitung.
+     *
+     * @return list<array{column: string, operator: string, value: string}>
+     */
+    public function taskConditions(): array
+    {
+        return array_values(array_filter(array_map(
+            self::parseCondition(...),
+            self::toConditionList($this->settings['task_conditions'] ?? []),
+        )));
+    }
+
+    /**
+     * Satu syarat "kolom operator nilai"; null bila tidak bisa dibaca.
+     *
+     * @return array{column: string, operator: string, value: string}|null
+     */
+    public static function parseCondition(string $condition): ?array
+    {
+        $pattern = '/^(.+?)\s*('.implode('|', array_map(fn (string $operator) => preg_quote($operator, '/'), self::CONDITION_OPERATORS)).')\s*(.*)$/u';
+
+        if (! preg_match($pattern, trim($condition), $match) || trim($match[1]) === '' || trim($match[3]) === '') {
+            return null;
+        }
+
+        return ['column' => trim($match[1]), 'operator' => $match[2], 'value' => trim($match[3])];
+    }
+
+    /**
+     * Apakah isi sel memenuhi syarat. Angka dibandingkan sebagai angka, selain itu sebagai teks
+     * (huruf besar/kecil tidak dibedakan).
+     *
+     * @param  array{column: string, operator: string, value: string}  $condition
+     */
+    public static function meetsCondition(mixed $cell, array $condition): bool
+    {
+        $cell = trim(is_bool($cell) ? ($cell ? 'true' : 'false') : (string) $cell);
+        $value = $condition['value'];
+
+        if (is_numeric($cell) && is_numeric($value)) {
+            $cell = (float) $cell;
+            $value = (float) $value;
+        } else {
+            $cell = mb_strtolower($cell);
+            $value = mb_strtolower($value);
+        }
+
+        return match ($condition['operator']) {
+            '>=' => $cell >= $value,
+            '<=' => $cell <= $value,
+            '>' => $cell > $value,
+            '<' => $cell < $value,
+            '!=' => $cell != $value,
+            default => $cell == $value,
+        };
+    }
+
+    /**
+     * Syarat dipisah titik koma atau baris baru (koma bisa jadi bagian nilai).
+     *
+     * @return list<string>
+     */
+    public static function toConditionList(mixed $value): array
+    {
+        $items = is_array($value) ? $value : preg_split('/[;\r\n]+/', (string) $value);
+
+        return array_values(array_filter(array_map(fn ($item) => trim((string) $item), $items), fn ($item) => $item !== ''));
     }
 
     /**

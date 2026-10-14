@@ -115,6 +115,13 @@
                 @error('taskValues') <p class="mt-1.5 text-xs text-rose-600">{{ $message }}</p> @enderror
             </div>
 
+            <div class="md:col-span-2">
+                <label class="label">Saringan tambahan (opsional)</label>
+                <input wire:model="taskConditions" type="text" class="input font-mono" placeholder="skor_kecocokan >= 80; skor_kecocokan <= 99">
+                <p class="mt-1 text-[11px] text-slate-400">Hanya baris yang memenuhi semua syarat yang jadi target & dihitung; baris lain tetap tampil. Pembanding: = != &gt; &gt;= &lt; &lt;=. Pisahkan syarat dengan titik koma.</p>
+                @error('taskConditions') <p class="mt-1.5 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
             <div>
                 <label class="label">Kolom wajib terisi (opsional)</label>
                 <input wire:model="requiredColumns" type="text" list="header-options" class="input font-mono" placeholder="KBLI Baru">

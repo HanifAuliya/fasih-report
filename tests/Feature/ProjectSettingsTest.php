@@ -313,6 +313,41 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame([self::UUID_A, self::UUID_B], TargetRow::orderBy('row_number')->pluck('row_key')->all());
     }
 
+    public function test_extra_conditions_limit_target_rows(): void
+    {
+        // BKU: hanya "0. Tidak Ditemukan" dengan skor_kecocokan 80-99 yang dikerjakan script
+        $project = $this->createProject();
+        $link = fn (string $uuid) => 'https://fasih-sm.bps.go.id/app/assignment-detail/'.$uuid;
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValues(['skor_kecocokan', 'bku_keberadaan_usaha', 'bku_link']));
+        $writer->addRow(Row::fromValues([98, '0. Tidak Ditemukan', $link(self::UUID_A)]));
+        $writer->addRow(Row::fromValues([79, '0. Tidak Ditemukan', $link(self::UUID_B)]));
+        $writer->addRow(Row::fromValues([90, '3. Tutup', $link(self::UUID_C)]));
+        $writer->close();
+        $this->upload($project, UploadedFile::fake()->createWithContent('Tidak ditemukan ke TUTUP.xlsx', file_get_contents($path)));
+        $this->assertSame(3, $project->kecamatans()->sole()->target);
+
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project])
+            ->set('taskConditions', 'skor_kecocokan')
+            ->call('save')
+            ->assertHasErrors('taskConditions');
+
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project->refresh()])
+            ->set('keyColumn', 'bku_link')
+            ->set('taskColumn', 'bku_keberadaan_usaha')
+            ->set('taskValues', '0. Tidak Ditemukan')
+            ->set('taskConditions', 'skor_kecocokan >= 80; skor_kecocokan <= 99')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(1, $project->kecamatans()->sole()->refresh()->target);
+        $this->assertSame([self::UUID_A], TargetRow::tracked()->pluck('row_key')->all());
+        $this->assertSame(['skor_kecocokan >= 80', 'skor_kecocokan <= 99'], $project->refresh()->settings['task_conditions']);
+    }
+
     public function test_csv_report_with_custom_statuses_updates_progress_and_recap(): void
     {
         $project = $this->createProject();
