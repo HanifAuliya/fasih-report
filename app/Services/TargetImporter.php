@@ -168,6 +168,13 @@ class TargetImporter
             }
         }
 
+        // Kolom link lain, mis. "bku_link" atau "fasih_link" (yang pertama)
+        foreach ($sheet->headers as $index => $header) {
+            if (preg_match('/(^|[_\s])link$/i', trim((string) $header))) {
+                return $index;
+            }
+        }
+
         return null;
     }
 

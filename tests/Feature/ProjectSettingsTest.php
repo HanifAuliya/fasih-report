@@ -294,6 +294,25 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame(1, $bagian2->refresh()->realisasi);
     }
 
+    public function test_any_link_column_is_used_when_no_known_key_column_exists(): void
+    {
+        // Pengaturan bawaan "link", tapi file BKU memakai bku_link & fasih_link
+        $project = $this->createProject();
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValues(['nama_kec', 'bku_nama_usaha', 'bku_link', 'fasih_link']));
+        $writer->addRow(Row::fromValues(['BARABAI', 'TOKO A', 'https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_A, 'https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_C]));
+        $writer->addRow(Row::fromValues(['BARABAI', 'TOKO B', 'https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_B, 'https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_C]));
+        $writer->close();
+
+        $this->upload($project, UploadedFile::fake()->createWithContent('Tidak ditemukan ke TUTUP.xlsx', file_get_contents($path)));
+
+        $this->assertSame(2, $project->kecamatans()->sole()->target);
+        $this->assertSame([self::UUID_A, self::UUID_B], TargetRow::orderBy('row_number')->pluck('row_key')->all());
+    }
+
     public function test_csv_report_with_custom_statuses_updates_progress_and_recap(): void
     {
         $project = $this->createProject();
