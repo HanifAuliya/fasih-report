@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Masuk · {{ config('app.name') }}</title>
 
+    <meta name="robots" content="noindex, nofollow">
     <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <x-theme-script />
     @fonts

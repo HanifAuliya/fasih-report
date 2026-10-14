@@ -265,7 +265,7 @@ class TargetDataTest extends TestCase
 
         $this->get(route('projects.combined.export', $this->project()))
             ->assertStatus(202)
-            ->assertHeader('Refresh', '3')
+            ->assertHeader('Refresh', '4')
             ->assertSee('Menyiapkan file');
 
         $this->get(route('projects.combined.export', $this->project()))
@@ -296,6 +296,19 @@ class TargetDataTest extends TestCase
 
         $after = Livewire::test(KecamatanTable::class, ['project' => $this->project()])->viewData('overallCounts');
         $this->assertSame(1, $after->get('closed'));
+    }
+
+    public function test_downloads_are_rate_limited_and_bots_are_disallowed(): void
+    {
+        $this->upload($this->targetWorkbook());
+        auth()->logout();
+
+        for ($i = 0; $i < 30; $i++) {
+            $this->get(route('projects.kecamatan.json', [$this->project(), '010']))->assertOk();
+        }
+
+        $this->get(route('projects.kecamatan.json', [$this->project(), '010']))->assertTooManyRequests();
+        $this->assertStringContainsString('Disallow: /', file_get_contents(public_path('robots.txt')));
     }
 
     public function test_guest_can_download_but_not_manage_reports(): void

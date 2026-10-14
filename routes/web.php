@@ -60,17 +60,20 @@ Route::livewire('/', Dashboard::class)->name('dashboard');
 Route::livewire('/data', ProjectIndex::class)->name('projects.index');
 Route::livewire('/data/{project}', ProjectShow::class)->name('projects.show');
 Route::livewire('/data/{project}/kecamatan/{kode}', KecamatanData::class)->name('projects.kecamatan');
-Route::get('/data/{project}/kecamatan/{kode}/excel', TargetExportController::class)->name('projects.kecamatan.export');
-Route::get('/data/{project}/kecamatan/{kode}/json', UnitStatusJsonController::class)->name('projects.kecamatan.json');
-Route::get('/data/{project}/rekap-perubahan', ProjectChangesExportController::class)->name('projects.changes.export');
-Route::get('/data/{project}/excel-gabungan', ProjectCombinedExportController::class)->name('projects.combined.export');
-Route::get('/data/{project}/excel-induk', MasterExportController::class)->name('projects.master.export');
-Route::get('/data/{project}/belum-selesai', PendingExportController::class)->name('projects.pending.export');
-Route::get('/data/{project}/json', UnitStatusJsonController::class)->name('projects.json');
-Route::get('/data/{project}/kecamatan/{kode}/belum-selesai', PendingExportController::class)->name('projects.kecamatan.pending');
+// Download berat (Excel/JSON): dibatasi per pengguna/IP supaya bot atau klik berulang tidak membebani server
+Route::middleware('throttle:downloads')->group(function () {
+    Route::get('/data/{project}/kecamatan/{kode}/excel', TargetExportController::class)->name('projects.kecamatan.export');
+    Route::get('/data/{project}/kecamatan/{kode}/json', UnitStatusJsonController::class)->name('projects.kecamatan.json');
+    Route::get('/data/{project}/rekap-perubahan', ProjectChangesExportController::class)->name('projects.changes.export');
+    Route::get('/data/{project}/excel-gabungan', ProjectCombinedExportController::class)->name('projects.combined.export');
+    Route::get('/data/{project}/excel-induk', MasterExportController::class)->name('projects.master.export');
+    Route::get('/data/{project}/belum-selesai', PendingExportController::class)->name('projects.pending.export');
+    Route::get('/data/{project}/json', UnitStatusJsonController::class)->name('projects.json');
+    Route::get('/data/{project}/kecamatan/{kode}/belum-selesai', PendingExportController::class)->name('projects.kecamatan.pending');
 
-Route::get('/files/{file}/download', [ReportFileController::class, 'download'])->name('files.download');
-Route::get('/files/{file}/view', [ReportFileController::class, 'view'])->name('files.view');
+    Route::get('/files/{file}/download', [ReportFileController::class, 'download'])->name('files.download');
+    Route::get('/files/{file}/view', [ReportFileController::class, 'view'])->name('files.view');
+});
 
 Route::middleware('auth')->group(function () {
     Route::post('/logout', function (Request $request) {

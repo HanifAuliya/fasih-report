@@ -7,6 +7,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ isset($title) ? $title.' · ' : '' }}{{ config('app.name') }}</title>
 
+    <meta name="robots" content="noindex, nofollow">
     <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <x-theme-script />
     @fonts

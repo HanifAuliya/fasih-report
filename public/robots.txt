@@ -1,2 +1,3 @@
+# Aplikasi internal: jangan dirayapi (link download di dalamnya berat untuk server)
 User-agent: *
-Disallow:
+Disallow: /

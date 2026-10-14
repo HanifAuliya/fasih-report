@@ -54,7 +54,7 @@ class PreparedExport
         return response()->view('exports.preparing', [
             'project' => $project,
             'failed' => ($state['status'] ?? null) === 'failed' && ! $running ? $state['message'] : null,
-        ], 202, ['Refresh' => '3', 'Cache-Control' => 'no-store']);
+        ], 202, ['Refresh' => '4', 'Cache-Control' => 'no-store']);
     }
 
     /**
