@@ -144,12 +144,12 @@
                     <tr wire:key="kec-{{ $kec->id }}-{{ $kec->updated_at?->timestamp }}" class="group hover:bg-slate-50/60">
                         <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ $kec->kode }}</td>
                         <td class="px-4 py-3">
-                            @if ($kec->tracked_rows_count)
+                            @if ($statusCounts->get($kec->id)?->sum())
                                 <a href="{{ route('projects.kecamatan', [$project, $kec->kode]) }}" wire:navigate class="link">{{ $kec->nama }}</a>
                             @else
                                 <p class="font-medium text-slate-900">{{ $kec->nama }}</p>
                             @endif
-                            @if ($kec->tracked_rows_count)
+                            @if ($statusCounts->get($kec->id)?->sum())
                                 @if ($activeReport = $kec->reports->first())
                                     <p class="mt-0.5 flex max-w-xs items-center gap-1 text-xs text-emerald-700" title="Rangkuman {{ $kec->reports->count() }} laporan, terbaru: {{ $activeReport->original_name }}">
                                         <x-icon name="check" class="size-3 shrink-0" />
@@ -169,7 +169,7 @@
                         </td>
                         <td class="px-4 py-3 text-right">
                             @can('manage')
-                                <input type="number" min="0" value="{{ $kec->target }}" @disabled($kec->tracked_rows_count) title="{{ $kec->tracked_rows_count ? 'Dihitung otomatis dari data Excel' : '' }}"
+                                <input type="number" min="0" value="{{ $kec->target }}" @disabled($statusCounts->get($kec->id)?->sum()) title="{{ $statusCounts->get($kec->id)?->sum() ? 'Dihitung otomatis dari data Excel' : '' }}"
                                     wire:change="updateField({{ $kec->id }}, 'target', $event.target.value)"
                                     class="w-20 rounded-lg border-transparent bg-transparent px-2 py-1 text-right text-sm tabular-nums hover:border-slate-200 disabled:cursor-default disabled:hover:border-transparent focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:outline-none">
                             @else
@@ -178,7 +178,7 @@
                         </td>
                         <td class="px-4 py-3 text-right">
                             @can('manage')
-                                <input type="number" min="0" value="{{ $kec->realisasi }}" @disabled($kec->tracked_rows_count) title="{{ $kec->tracked_rows_count ? 'Dihitung otomatis dari data Excel' : '' }}"
+                                <input type="number" min="0" value="{{ $kec->realisasi }}" @disabled($statusCounts->get($kec->id)?->sum()) title="{{ $statusCounts->get($kec->id)?->sum() ? 'Dihitung otomatis dari data Excel' : '' }}"
                                     wire:change="updateField({{ $kec->id }}, 'realisasi', $event.target.value)"
                                     class="w-20 rounded-lg border-transparent bg-transparent px-2 py-1 text-right text-sm tabular-nums hover:border-slate-200 disabled:cursor-default disabled:hover:border-transparent focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:outline-none">
                             @else
@@ -222,7 +222,7 @@
                         <td class="px-4 py-3 text-center text-xs text-slate-500">{{ $kec->files_count ?: '–' }}</td>
                         <td class="px-4 py-3">
                             <div class="flex items-center justify-end gap-1">
-                                @if ($kec->tracked_rows_count)
+                                @if ($statusCounts->get($kec->id)?->sum())
                                     <a href="{{ route('projects.kecamatan', [$project, $kec->kode]) }}" wire:navigate class="btn-secondary btn-sm">
                                         Buka data <x-icon name="chevron-right" class="size-3.5" />
                                     </a>

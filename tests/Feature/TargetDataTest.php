@@ -285,6 +285,19 @@ class TargetDataTest extends TestCase
         $this->get(route('projects.combined.export', $this->project()))->assertOk()->assertDownload();
     }
 
+    public function test_cached_project_summary_refreshes_after_status_change(): void
+    {
+        $this->upload($this->targetWorkbook());
+        $before = Livewire::test(KecamatanTable::class, ['project' => $this->project()])->viewData('overallCounts');
+        $this->assertSame(0, $before->get('closed', 0));
+
+        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
+            ->call('setStatus', TargetRow::firstWhere('row_key', 'aaa-1')->id, 'closed');
+
+        $after = Livewire::test(KecamatanTable::class, ['project' => $this->project()])->viewData('overallCounts');
+        $this->assertSame(1, $after->get('closed'));
+    }
+
     public function test_guest_can_download_but_not_manage_reports(): void
     {
         $this->upload($this->targetWorkbook());

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\TargetRow;
 use App\Services\ReportFileProcessor;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -186,25 +187,19 @@ class KecamatanTable extends Component
     public function render()
     {
         $kecamatans = $this->project->kecamatans()
-            ->withCount(['files', 'targetRows as tracked_rows_count' => fn ($q) => $q->tracked()])
+            ->withCount('files')
             ->with(['reports' => fn ($q) => $q->where('is_active', true)])
             ->when($this->filter, fn ($q) => $q->where('status', $this->filter))
             ->get();
 
         $all = $this->project->kecamatans()->get();
-
-        $statusCounts = TargetRow::where('project_id', $this->project->id)
-            ->tracked()
-            ->selectRaw('kecamatan_id, status, count(*) as total')
-            ->groupBy('kecamatan_id', 'status')
-            ->get()
-            ->groupBy('kecamatan_id')
-            ->map(fn ($rows) => $rows->pluck('total', 'status'));
+        $stats = $this->stats();
+        $statusCounts = collect($stats['status_counts'])->map(fn (array $counts) => collect($counts));
 
         return view('livewire.projects.kecamatan-table', [
             'kecamatans' => $kecamatans,
             'statusCounts' => $statusCounts,
-            'changedRowsCount' => TargetRow::where('project_id', $this->project->id)->whereNotNull('status_file_id')->count(),
+            'changedRowsCount' => $stats['changed_rows'],
             'allUnits' => $all,
             'overallCounts' => $statusCounts->reduce(
                 fn ($totals, $counts) => $counts->reduce(fn ($totals, $total, $status) => $totals->put($status, $totals->get($status, 0) + $total), $totals),
@@ -213,7 +208,31 @@ class KecamatanTable extends Component
             'counts' => collect(Kecamatan::STATUSES)->map(fn ($label, $key) => $all->where('status', $key)->count()),
             'totalTarget' => $all->sum('target'),
             'totalRealisasi' => $all->sum('realisasi'),
-            'kecamatanRecap' => $this->project->config()->recapColumn() ? $this->kecamatanRecap() : collect(),
+            'kecamatanRecap' => collect($stats['recap']),
+        ]);
+    }
+
+    /**
+     * Ringkasan berat pekerjaan (jumlah per unit & status, rekap kecamatan, baris yang diubah laporan),
+     * dihitung sekali lalu dipakai bersama semua pengunjung sampai data atau pengaturan berubah.
+     *
+     * @return array{status_counts: array<int, array<string, int>>, changed_rows: int, recap: array<string, array{total: int, done: int, percent: int, statuses: array<string, int>}>}
+     */
+    private function stats(): array
+    {
+        $version = Kecamatan::dataVersion($this->project->id).'-'.$this->project->updated_at?->getTimestamp();
+
+        return Cache::remember("project-stats:{$this->project->id}:{$version}", now()->addHour(), fn () => [
+            'status_counts' => TargetRow::where('project_id', $this->project->id)
+                ->tracked()
+                ->selectRaw('kecamatan_id, status, count(*) as total')
+                ->groupBy('kecamatan_id', 'status')
+                ->get()
+                ->groupBy('kecamatan_id')
+                ->map(fn ($rows) => $rows->mapWithKeys(fn ($row) => [(string) $row->status => (int) $row->total])->all())
+                ->all(),
+            'changed_rows' => TargetRow::where('project_id', $this->project->id)->whereNotNull('status_file_id')->count(),
+            'recap' => $this->project->config()->recapColumn() ? $this->kecamatanRecap()->all() : [],
         ]);
     }
 

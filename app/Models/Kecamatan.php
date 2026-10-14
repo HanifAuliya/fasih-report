@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Cache;
 
 #[Fillable(['project_id', 'kode', 'nama', 'target', 'realisasi', 'status', 'catatan'])]
 class Kecamatan extends Model
@@ -58,8 +59,30 @@ class Kecamatan extends Model
     /**
      * Hitung target & realisasi dari baris Excel target (jika sudah diimpor).
      */
+    /**
+     * Versi data baris satu pekerjaan; naik setiap ada status/baris yang berubah, sehingga ringkasan
+     * yang di-cache (jumlah per status, rekap) otomatis dihitung ulang.
+     */
+    public static function dataVersion(int $projectId): int
+    {
+        return (int) Cache::get("project-data:{$projectId}", 0);
+    }
+
+    public static function touchProjectData(int $projectId): void
+    {
+        Cache::forever("project-data:{$projectId}", self::dataVersion($projectId) + 1);
+    }
+
+    protected static function booted(): void
+    {
+        static::deleted(fn (Kecamatan $unit) => self::touchProjectData($unit->project_id));
+    }
+
     public function syncProgressFromTargets(): void
     {
+        // Dipanggil setelah setiap perubahan baris/status unit ini
+        self::touchProjectData($this->project_id);
+
         $total = $this->targetRows()->tracked()->count();
 
         if ($total === 0) {
