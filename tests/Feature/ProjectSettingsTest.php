@@ -313,6 +313,34 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame([self::UUID_A, self::UUID_B], TargetRow::orderBy('row_number')->pluck('row_key')->all());
     }
 
+    public function test_report_uuid_in_common_field_is_used_when_configured_report_field_is_missing(): void
+    {
+        // Pengaturan "Field kunci di laporan" = bku_link, tapi script Tutup BKU menulis UUID-nya di "id"
+        $project = $this->createProject();
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->addRow(Row::fromValues(['bku_nama_usaha', 'bku_link']));
+        $writer->addRow(Row::fromValues(['TOKO A', 'https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_A]));
+        $writer->addRow(Row::fromValues(['TOKO B', 'https://fasih-sm.bps.go.id/app/assignment-detail/'.self::UUID_B]));
+        $writer->close();
+        $this->upload($project, UploadedFile::fake()->createWithContent('TES_1_skor_95-99.xlsx', file_get_contents($path)));
+
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project])
+            ->set('keyColumn', 'bku_link')
+            ->set('reportKeyFields', 'bku_link')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->uploadReport($project->refresh(), UploadedFile::fake()->createWithContent('antrean-tutup-bku-tidak-ditemukan.json', json_encode(['v' => 1, 'queue' => [
+            ['id' => self::UUID_A, 'url' => 'https://fasih-sm.bps.go.id/app/assignment/x/'.self::UUID_C, 'status' => 'done', 'targets' => [['row' => 2, 'nama' => 'TOKO A']]],
+            ['id' => 'Sheet1!3', 'status' => 'done'],
+        ]])));
+
+        $this->assertSame('done', TargetRow::firstWhere('row_key', self::UUID_A)->status);
+        $this->assertSame('pending', TargetRow::firstWhere('row_key', self::UUID_B)->status, 'id bukan UUID tidak dipakai');
+    }
+
     public function test_deleting_owner_unit_gives_duplicate_rows_their_status_back(): void
     {
         $project = $this->createProject();

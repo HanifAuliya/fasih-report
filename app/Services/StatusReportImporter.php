@@ -29,6 +29,9 @@ class StatusReportImporter
 
     private const MAX_RESULT_FIELDS = 40;
 
+    /** Field kunci yang umum di laporan script, dicoba bila field kunci pengaturan tidak ada di laporan. */
+    private const COMMON_KEY_FIELDS = ['id', 'assignment_id', 'url', 'link'];
+
     /** Penanda sheet untuk laporan yang hanya menyebut nomor baris; diganti sheet milik unit saat diterapkan. */
     private const ANY_SHEET = '*';
 
@@ -662,7 +665,23 @@ class StatusReportImporter
     private function rowKey(array $item, ProjectSettings $settings): ?string
     {
         if ($settings->keyMode() === ProjectSettings::KEY_COLUMN) {
-            return TargetImporter::normalizeKey($this->firstField($item, $settings->reportKeyFields()));
+            $key = TargetImporter::normalizeKey($this->firstField($item, $settings->reportKeyFields()));
+
+            if ($key !== null) {
+                return $key;
+            }
+
+            // Field kunci pengaturan tidak ada di laporan (mis. diisi "bku_link" padahal script memakai "id"):
+            // coba field umum, asal isinya UUID supaya tidak salah cocok
+            foreach (self::COMMON_KEY_FIELDS as $field) {
+                $value = (string) $this->firstField($item, [$field]);
+
+                if (preg_match('/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i', $value)) {
+                    return TargetImporter::normalizeKey($value);
+                }
+            }
+
+            return null;
         }
 
         $id = trim((string) ($item['id'] ?? ''));
