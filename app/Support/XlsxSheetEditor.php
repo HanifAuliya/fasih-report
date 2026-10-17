@@ -63,6 +63,9 @@ class XlsxSheetEditor
 
             if (preg_match($pattern, $workbook)) {
                 $workbook = preg_replace($pattern, $replacement, $workbook, 1);
+            } elseif (preg_match('/<definedNames\b[^>]*\/>/', $workbook)) {
+                // Elemen kosong (mis. buatan openpyxl) diisi; jangan ditambah elemen kedua (Excel menganggap rusak)
+                $workbook = preg_replace('/<definedNames\b[^>]*\/>/', '<definedNames>'.$replacement.'</definedNames>', $workbook, 1);
             } elseif (str_contains($workbook, '</definedNames>')) {
                 $workbook = str_replace('</definedNames>', $definedName.'</definedNames>', $workbook);
             } else {
