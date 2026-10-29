@@ -285,6 +285,28 @@ class TargetDataTest extends TestCase
         $this->get(route('projects.combined.export', $this->project()))->assertOk()->assertDownload();
     }
 
+    public function test_unit_can_be_marked_as_worked_on_by_someone(): void
+    {
+        $this->upload($this->targetWorkbook());
+
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])
+            ->call('setWorkedBy', $this->haruyan()->id, '  Hanif  ')
+            ->assertSee('Dikerjakan oleh');
+        $this->assertSame('Hanif', $this->haruyan()->worked_by);
+        $this->assertNotNull($this->haruyan()->worked_by_at);
+
+        Livewire::test(KecamatanData::class, ['project' => $this->project(), 'kode' => '010'])
+            ->assertSee('Dikerjakan oleh')
+            ->assertViewHas('workedByNames', ['Hanif'])
+            ->call('setWorkedBy', $this->haruyan()->id, '');
+        $this->assertNull($this->haruyan()->worked_by);
+
+        auth()->logout();
+        Livewire::test(KecamatanTable::class, ['project' => $this->project()])
+            ->call('setWorkedBy', $this->haruyan()->id, 'Orang lain')
+            ->assertForbidden();
+    }
+
     public function test_cached_project_summary_refreshes_after_status_change(): void
     {
         $this->upload($this->targetWorkbook());

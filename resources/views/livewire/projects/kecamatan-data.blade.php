@@ -44,6 +44,14 @@
                 @if ($sheet?->sourceFile)
                     <p class="mt-1 text-xs text-slate-500">Sumber: {{ $sheet->sourceFile->original_name }} · diimpor {{ $sheet->created_at->diffForHumans() }}</p>
                 @endif
+                <div class="mt-2 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+                    <x-icon name="monitor" class="size-3.5 shrink-0" />
+                    <span>Dikerjakan oleh</span>
+                    <x-worked-by :unit="$kecamatan" action="setWorkedBy" :names="$workedByNames" />
+                    @if ($kecamatan->worked_by_at)
+                        <span class="text-slate-400">· {{ $kecamatan->worked_by_at->diffForHumans() }}</span>
+                    @endif
+                </div>
             </div>
             <div class="flex items-center gap-4 lg:w-[26rem]">
                 <div class="flex-1">

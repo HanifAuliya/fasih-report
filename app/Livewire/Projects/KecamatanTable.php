@@ -120,6 +120,16 @@ class KecamatanTable extends Component
         $this->changed('Tersimpan');
     }
 
+    public function setWorkedBy(int $id, string $name): void
+    {
+        $this->authorize('manage');
+
+        $unit = $this->project->kecamatans()->findOrFail($id);
+        $unit->markWorkedBy($name);
+
+        $this->dispatch('toast', message: $unit->worked_by ? "{$unit->nama} dikerjakan oleh {$unit->worked_by}" : "{$unit->nama}: penanda dikerjakan dihapus");
+    }
+
     public function openUpload(): void
     {
         $this->authorize('manage');
@@ -221,6 +231,7 @@ class KecamatanTable extends Component
             'totalTarget' => $all->sum('target'),
             'totalRealisasi' => $all->sum('realisasi'),
             'kecamatanRecap' => collect($stats['recap']),
+            'workedByNames' => Kecamatan::workedByNames($this->project->id),
         ]);
     }
 

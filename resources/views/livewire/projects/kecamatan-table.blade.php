@@ -134,6 +134,7 @@
                     <th class="px-4 py-3 text-right">Realisasi</th>
                     <th class="w-48 px-4 py-3">Progress</th>
                     <th class="px-4 py-3">Status</th>
+                    <th class="px-4 py-3">Dikerjakan oleh</th>
                     <th class="px-4 py-3 text-center">File</th>
                     <th class="px-4 py-3 text-right">Aksi</th>
                 </tr>
@@ -218,6 +219,12 @@
                                     </select>
                                 @endcan
                             </div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <x-worked-by :unit="$kec" action="setWorkedBy" :names="$workedByNames" />
+                            @if ($kec->worked_by_at)
+                                <p class="px-2 text-[11px] text-slate-400">{{ $kec->worked_by_at->diffForHumans() }}</p>
+                            @endif
                         </td>
                         <td class="px-4 py-3 text-center text-xs text-slate-500">{{ $kec->files_count ?: '–' }}</td>
                         <td class="px-4 py-3">

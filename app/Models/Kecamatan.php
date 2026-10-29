@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
 
-#[Fillable(['project_id', 'kode', 'nama', 'target', 'realisasi', 'status', 'catatan'])]
+#[Fillable(['project_id', 'kode', 'nama', 'target', 'realisasi', 'status', 'catatan', 'worked_by', 'worked_by_at'])]
 class Kecamatan extends Model
 {
     public const STATUSES = [
@@ -22,7 +22,31 @@ class Kecamatan extends Model
         return [
             'target' => 'integer',
             'realisasi' => 'integer',
+            'worked_by_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Tandai siapa / komputer mana yang mengerjakan unit ini; kosong = tidak ada yang mengerjakan.
+     */
+    public function markWorkedBy(?string $name): void
+    {
+        $name = trim((string) $name);
+
+        $this->forceFill([
+            'worked_by' => $name !== '' ? mb_substr($name, 0, 60) : null,
+            'worked_by_at' => $name !== '' ? now() : null,
+        ])->save();
+    }
+
+    /**
+     * Nama yang pernah dipakai di pekerjaan ini (saran isian "Dikerjakan oleh").
+     *
+     * @return list<string>
+     */
+    public static function workedByNames(int $projectId): array
+    {
+        return static::where('project_id', $projectId)->whereNotNull('worked_by')->distinct()->orderBy('worked_by')->pluck('worked_by')->all();
     }
 
     public function project(): BelongsTo

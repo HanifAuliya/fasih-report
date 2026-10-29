@@ -182,6 +182,17 @@ class KecamatanData extends Component
         return $count;
     }
 
+    public function setWorkedBy(int $id, string $name): void
+    {
+        $this->authorize('manage');
+
+        abort_unless($id === $this->kecamatan->id, 404);
+        $this->kecamatan->markWorkedBy($name);
+
+        $this->dispatch('toast', message: $this->kecamatan->worked_by ? 'Dikerjakan oleh '.$this->kecamatan->worked_by : 'Penanda dikerjakan dihapus');
+        $this->dispatch('project-updated');
+    }
+
     public function openReportUpload(): void
     {
         $this->authorize('manage');
@@ -297,6 +308,7 @@ class KecamatanData extends Component
                 ? $sheet->rows()->reorder()->toBase()->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status')
                 : collect(),
             'sheetProgress' => $this->sheetProgress($sheets),
+            'workedByNames' => Kecamatan::workedByNames($this->project->id),
             'previousKecamatan' => $position > 0 ? $kecamatans[$position - 1] : null,
             'nextKecamatan' => $kecamatans[$position + 1] ?? null,
             'reports' => $this->kecamatan->reports()->with('uploader')->get(),
