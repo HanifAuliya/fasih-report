@@ -35,6 +35,7 @@ class ProjectSettings
         'task_values' => ['1', 'ya', 'true'],
         'task_conditions' => [],
         'required_columns' => [],
+        'ignored_sheets' => [],
         'display_columns' => [],
         'statuses' => [],
     ];
@@ -193,6 +194,22 @@ class ProjectSettings
     /**
      * Kolom yang harus terisi supaya baris bisa dikerjakan (mis. "KBLI Baru"); kosong = "Belum siap".
      *
+     * @return list<string>
+     */
+    public function ignoredSheets(): array
+    {
+        return self::toList($this->settings['ignored_sheets'] ?? []);
+    }
+
+    /**
+     * Sheet ringkasan/daftar yang tidak boleh dihitung walau punya kolom kunci (mis. "daftar_dokumen").
+     */
+    public function isIgnoredSheet(string $name): bool
+    {
+        return in_array(mb_strtolower(trim($name)), array_map('mb_strtolower', $this->ignoredSheets()), true);
+    }
+
+    /**
      * @return list<string>
      */
     public function requiredColumns(): array

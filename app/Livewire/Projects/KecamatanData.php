@@ -296,11 +296,45 @@ class KecamatanData extends Component
             'statusCounts' => $sheet && $tracked
                 ? $sheet->rows()->reorder()->toBase()->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status')
                 : collect(),
+            'sheetProgress' => $this->sheetProgress($sheets),
             'previousKecamatan' => $position > 0 ? $kecamatans[$position - 1] : null,
             'nextKecamatan' => $kecamatans[$position + 1] ?? null,
             'reports' => $this->kecamatan->reports()->with('uploader')->get(),
             'detail' => $this->detailId ? TargetRow::with(['sheet', 'statusFile'])->find($this->detailId) : null,
         ])->title($this->kecamatan->nama.' · '.$this->project->name);
+    }
+
+    /**
+     * Jumlah baris dihitung per sheet & status di unit ini (untuk progres semua sheet sekaligus).
+     *
+     * @param  Collection<int, TargetSheet>  $sheets
+     * @return Collection<int, array{sheet: TargetSheet, counts: Collection<string, int>, total: int, done: int}>
+     */
+    private function sheetProgress(Collection $sheets): Collection
+    {
+        $statuses = $this->project->config()->statuses();
+        $counts = $this->kecamatan->targetRows()
+            ->tracked()
+            ->reorder()
+            ->toBase()
+            ->selectRaw('target_sheet_id, status, count(*) as total')
+            ->groupBy('target_sheet_id', 'status')
+            ->get()
+            ->groupBy('target_sheet_id');
+
+        return $sheets
+            ->filter(fn (TargetSheet $sheet) => $counts->has($sheet->id))
+            ->map(function (TargetSheet $sheet) use ($counts, $statuses) {
+                $byStatus = $counts[$sheet->id]->mapWithKeys(fn ($row) => [(string) $row->status => (int) $row->total]);
+
+                return [
+                    'sheet' => $sheet,
+                    'counts' => $byStatus,
+                    'total' => $byStatus->sum(),
+                    'done' => $byStatus->filter(fn (int $n, string $code) => $statuses->isDone($code))->sum(),
+                ];
+            })
+            ->values();
     }
 
     /**

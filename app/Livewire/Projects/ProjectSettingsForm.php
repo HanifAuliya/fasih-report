@@ -47,6 +47,8 @@ class ProjectSettingsForm extends Component
 
     public string $requiredColumns = '';
 
+    public string $ignoredSheets = '';
+
     public string $displayColumns = '';
 
     /** @var list<array{code: string, label: string, color: string, done: bool, aliases: string}> */
@@ -81,6 +83,7 @@ class ProjectSettingsForm extends Component
         $this->taskValues = implode(', ', $config->taskValues());
         $this->taskConditions = implode('; ', array_map(fn (array $condition) => "{$condition['column']} {$condition['operator']} {$condition['value']}", $config->taskConditions()));
         $this->requiredColumns = implode(', ', $config->requiredColumns());
+        $this->ignoredSheets = implode(', ', $config->ignoredSheets());
         $this->displayColumns = implode(', ', $config->displayColumns());
         $this->statuses = $config->statuses()->all()
             ->map(fn (array $status) => [...$status, 'aliases' => implode(', ', $status['aliases'])])
@@ -140,6 +143,7 @@ class ProjectSettingsForm extends Component
                 }
             }],
             'requiredColumns' => ['nullable', 'string', 'max:300'],
+            'ignoredSheets' => ['nullable', 'string', 'max:300'],
             'displayColumns' => ['nullable', 'string', 'max:2000'],
             'statuses' => ['required', 'array', 'min:1'],
             'statuses.*.code' => ['required', 'string', 'max:20', 'regex:/^[a-z0-9_-]+$/i', 'distinct:ignore_case'],
@@ -169,6 +173,7 @@ class ProjectSettingsForm extends Component
             'task_values' => ProjectSettings::toList($this->taskValues),
             'task_conditions' => ProjectSettings::toConditionList($this->taskConditions),
             'required_columns' => ProjectSettings::toList($this->requiredColumns),
+            'ignored_sheets' => ProjectSettings::toList($this->ignoredSheets),
             'display_columns' => ProjectSettings::toList($this->displayColumns),
             'statuses' => $this->statuses,
         ]))->toArray()]);
@@ -204,6 +209,7 @@ class ProjectSettingsForm extends Component
             'task_values' => $config->taskValues(),
             'task_conditions' => $config->taskConditions(),
             'required_columns' => $config->requiredColumns(),
+            'ignored_sheets' => $config->ignoredSheets(),
             'statuses' => $config->statuses()->toArray(),
         ];
     }

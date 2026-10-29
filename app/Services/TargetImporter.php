@@ -262,7 +262,7 @@ class TargetImporter
      */
     private function isTrackable(TargetSheet $sheet, ProjectSettings $settings, array $columns, bool $hasDataSheet): bool
     {
-        if ((int) $sheet->row_count === 0) {
+        if ((int) $sheet->row_count === 0 || $settings->isIgnoredSheet((string) $sheet->name)) {
             return false;
         }
 

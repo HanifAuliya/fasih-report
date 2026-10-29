@@ -341,6 +341,48 @@ class ProjectSettingsTest extends TestCase
         $this->assertSame('pending', TargetRow::firstWhere('row_key', self::UUID_B)->status, 'id bukan UUID tidak dipakai');
     }
 
+    public function test_ignored_list_sheet_is_not_counted_and_unit_page_shows_progress_of_all_sheets(): void
+    {
+        // Anomali sosek: sheet per kasus + sheet daftar_dokumen yang juga punya assignment_id
+        $project = $this->createProject();
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+        $writer->getCurrentSheet()->setName('R149');
+        $writer->addRow(Row::fromValues(['nama_kk', 'assignment_id']));
+        $writer->addRow(Row::fromValues(['FAJERI', self::UUID_A]));
+        $writer->addNewSheetAndMakeItCurrent()->setName('R154');
+        $writer->addRow(Row::fromValues(['nama_kk', 'assignment_id']));
+        $writer->addRow(Row::fromValues(['FAJERI', self::UUID_A]));
+        $writer->addRow(Row::fromValues(['DIAN', self::UUID_B]));
+        $writer->addNewSheetAndMakeItCurrent()->setName('daftar_dokumen');
+        $writer->addRow(Row::fromValues(['assignment_id', 'kepala_keluarga', 'jumlah_kasus']));
+        $writer->addRow(Row::fromValues([self::UUID_A, 'FAJERI', 2]));
+        $writer->addRow(Row::fromValues([self::UUID_B, 'DIAN', 1]));
+        $writer->close();
+        $this->upload($project, UploadedFile::fake()->createWithContent('anomali_sosek - bagian 1 dari 6.xlsx', file_get_contents($path)));
+        $unit = $project->kecamatans()->sole();
+        $this->assertSame(5, $unit->target, 'tanpa pengaturan, daftar_dokumen ikut dihitung');
+
+        Livewire::test(ProjectSettingsForm::class, ['project' => $project])
+            ->set('keyColumn', 'assignment_id')
+            ->set('ignoredSheets', 'daftar_dokumen, sosek')
+            ->call('save')
+            ->assertHasNoErrors();
+        $this->assertSame(3, $unit->refresh()->target);
+
+        // Laporan per dokumen: satu id menandai semua kasus keluarga itu di semua sheet
+        $this->uploadReport($project->refresh(), UploadedFile::fake()->createWithContent('antrean-remark-sosek.json', json_encode(['queue' => [
+            ['id' => self::UUID_A, 'cats' => ['R149', 'R154'], 'status' => 'done'],
+        ]])));
+
+        $this->assertSame(2, $unit->refresh()->realisasi);
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $unit->kode])
+            ->assertSee('Progres semua sheet')
+            ->assertSeeText('2 / 3 selesai')
+            ->assertViewHas('sheetProgress', fn ($progress) => $progress->pluck('sheet.name')->all() === ['R149', 'R154']);
+    }
+
     public function test_deleting_owner_unit_gives_duplicate_rows_their_status_back(): void
     {
         $project = $this->createProject();

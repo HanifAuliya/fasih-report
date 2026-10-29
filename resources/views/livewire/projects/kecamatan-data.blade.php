@@ -64,9 +64,71 @@
             </div>
         </div>
 
+        {{-- Progres semua sheet sekaligus (tiap sheet bisa jenis kasus berbeda) --}}
+        @if ($sheetProgress->count() > 1)
+            @php
+                $allCounts = $sheetProgress->reduce(fn ($carry, $item) => $item['counts']->reduce(fn ($c, $n, $code) => $c->put($code, $c->get($code, 0) + $n), $carry), collect());
+                $allTotal = $sheetProgress->sum('total');
+                $allDone = $sheetProgress->sum('done');
+            @endphp
+            <div class="border-t border-slate-100 px-5 py-4">
+                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 class="text-sm font-semibold text-slate-900">Progres semua sheet</h2>
+                    <p class="text-xs text-slate-500 tabular-nums">
+                        <b class="font-semibold text-slate-900">{{ number_format($allDone, 0, ',', '.') }}</b> / {{ number_format($allTotal, 0, ',', '.') }} selesai
+                        · {{ $allTotal ? (int) floor($allDone / $allTotal * 100) : 0 }}%
+                    </p>
+                </div>
+                <div class="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-100">
+                    @foreach ($statuses->all() as $code => $status)
+                        @if ($n = $allCounts->get($code))
+                            <span class="h-full {{ $statuses->dotClasses($code) }}" style="width: {{ $n / $allTotal * 100 }}%" title="{{ $status['label'] }}: {{ number_format($n, 0, ',', '.') }}"></span>
+                        @endif
+                    @endforeach
+                </div>
+                <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                    @foreach ($statuses->all() as $code => $status)
+                        @if ($n = $allCounts->get($code))
+                            <li class="flex items-center gap-1.5 text-xs text-slate-600">
+                                <span class="size-2 rounded-full {{ $statuses->dotClasses($code) }}"></span>
+                                {{ $status['label'] }} <b class="font-semibold text-slate-900 tabular-nums">{{ number_format($n, 0, ',', '.') }}</b>
+                            </li>
+                        @endif
+                    @endforeach
+                </ul>
+
+                <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                    @foreach ($sheetProgress as $item)
+                        @php $sheetPercent = $item['total'] ? (int) floor($item['done'] / $item['total'] * 100) : 0; @endphp
+                        <button type="button" wire:key="progress-{{ $item['sheet']->id }}" wire:click="$set('sheetId', {{ $item['sheet']->id }})"
+                            @class(['rounded-lg border p-2.5 text-left transition', 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' => $sheet?->is($item['sheet']), 'border-slate-200 hover:border-slate-300 hover:bg-slate-50' => ! $sheet?->is($item['sheet'])])
+                            title="Buka sheet {{ $item['sheet']->name }}">
+                            <span class="flex items-baseline justify-between gap-2">
+                                <span class="truncate text-xs font-medium text-slate-700">{{ $item['sheet']->name }}</span>
+                                <span class="text-xs font-semibold text-slate-900 tabular-nums">{{ $sheetPercent }}%</span>
+                            </span>
+                            <span class="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                @foreach ($statuses->all() as $code => $status)
+                                    @if (($n = $item['counts']->get($code)) && $statuses->isDone($code))
+                                        <span class="h-full {{ $statuses->dotClasses($code) }}" style="width: {{ $n / $item['total'] * 100 }}%"></span>
+                                    @endif
+                                @endforeach
+                            </span>
+                            <span class="mt-1 block text-[11px] text-slate-500 tabular-nums">{{ number_format($item['done'], 0, ',', '.') }} / {{ number_format($item['total'], 0, ',', '.') }} selesai</span>
+                        </button>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         @if ($tracked && $trackedTotal)
             <div class="flex items-center gap-2 border-t border-slate-100 px-5 pt-3 text-xs text-slate-500">
-                <x-icon name="search" class="size-3.5" /> Klik salah satu kotak untuk menyaring tabel berdasarkan status
+                <x-icon name="search" class="size-3.5" />
+                @if ($sheetProgress->count() > 1)
+                    Sheet <b class="font-medium text-slate-700">{{ $sheet->name }}</b>: klik salah satu kotak untuk menyaring tabel berdasarkan status
+                @else
+                    Klik salah satu kotak untuk menyaring tabel berdasarkan status
+                @endif
             </div>
             <div class="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-flow-col lg:auto-cols-fr lg:grid-cols-none">
                 <button type="button" wire:click="$set('statusFilter', '')" @class(['rounded-lg border p-3 text-left transition', 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' => $statusFilter === '', 'border-slate-200 hover:border-slate-300 hover:bg-slate-50' => $statusFilter !== ''])>

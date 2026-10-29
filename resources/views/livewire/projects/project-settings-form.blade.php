@@ -128,6 +128,12 @@
                 <p class="mt-1 text-[11px] text-slate-400">Baris yang dikerjakan tapi kolom ini kosong → "Belum siap": tampil, tidak dihitung, tidak ikut Excel belum selesai. Pisahkan dengan koma.</p>
             </div>
 
+            <div>
+                <label class="label">Sheet yang tidak dihitung (opsional)</label>
+                <input wire:model="ignoredSheets" type="text" class="input font-mono" placeholder="daftar_dokumen, sosek">
+                <p class="mt-1 text-[11px] text-slate-400">Sheet ringkasan/daftar di Excel: tetap tampil, tapi barisnya bukan target & tidak terkena laporan. Pisahkan dengan koma.</p>
+            </div>
+
             <div class="md:col-span-2">
                 <label class="label">Kolom yang tampil di mode Ringkas</label>
                 <textarea wire:model="displayColumns" rows="2" class="input font-mono text-xs" placeholder="nama_usaha, kec, desa, link"></textarea>
