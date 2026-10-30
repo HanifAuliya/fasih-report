@@ -65,7 +65,8 @@ class PreparedExport
         Cache::put($key, ['status' => 'running', 'version' => $version, 'at' => now()->getTimestamp()], now()->addHours(2));
 
         defer(function () use ($key, $project, $name, $version, $build) {
-            set_time_limit(0);
+            // Batas 15 menit: proses yang macet tidak boleh menahan slot PHP situs selamanya (503 "server busy")
+            @set_time_limit(900);
             ignore_user_abort(true);
 
             try {
