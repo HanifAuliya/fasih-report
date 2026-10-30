@@ -201,7 +201,9 @@ class MasterWorkbookTest extends TestCase
         $sheet = app(TargetImporter::class)->readWorkbook(
             $this->get(route('projects.kecamatan.export', [$project, $bagian2->kode]))->assertOk()->getFile()->getPathname()
         )[0];
-        $this->assertSame('Sudah di BAGIAN 01', array_values($sheet['rows'])[0][5]);
+        // Baris kembar: status ikut status di unit pemiliknya, keterangan menyebut unit itu
+        $this->assertSame('Selesai', array_values($sheet['rows'])[0][5]);
+        $this->assertStringStartsWith('Sudah di BAGIAN 01', array_values($sheet['rows'])[0][6]);
 
         // Bagian 1 dihapus: B kembali dihitung di Bagian 2
         $bagian1->delete();

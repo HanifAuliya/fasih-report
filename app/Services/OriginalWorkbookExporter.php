@@ -94,9 +94,9 @@ class OriginalWorkbookExporter
      */
     private function writeStatuses(string $xml, TargetSheet $sheet, StatusSet $statuses, ?XlsxStyleBook $styleBook): array
     {
-        $rows = TargetRow::where('target_sheet_id', $sheet->id)
+        $rows = TargetRow::withOwners(TargetRow::where('target_sheet_id', $sheet->id)
             ->with('duplicateOf:id,nama')
-            ->get(['row_number', 'status', 'reason', 'status_at', 'duplicate_of_id'])
+            ->get(['row_number', 'row_key', 'status', 'reason', 'status_at', 'duplicate_of_id']))
             ->keyBy('row_number');
 
         $firstStatusColumn = count($sheet->headers);
@@ -120,9 +120,14 @@ class OriginalWorkbookExporter
                     $values[$firstStatusColumn + $offset] = $header;
                 }
             } elseif (($row = $rows->get($rowNumber)) && $row->duplicateOf) {
-                // Baris kembar: dihitung di unit lain
-                $statusColor = 'slate';
-                $values = [$firstStatusColumn => 'Sudah di '.$row->duplicateOf->nama];
+                // Baris kembar: dihitung di unit lain, statusnya ikut status di unit itu
+                $owner = $row->owner;
+                $statusColor = $owner?->status ? ($statuses->all()[$owner->status]['color'] ?? 'slate') : 'slate';
+                $values = [
+                    $firstStatusColumn => $owner?->status ? $statuses->label($owner->status) : 'Sudah di '.$row->duplicateOf->nama,
+                    $firstStatusColumn + 1 => 'Sudah di '.$row->duplicateOf->nama.($owner?->reason ? ' · '.$owner->reason : ''),
+                    $firstStatusColumn + 2 => $owner?->status_at?->format('Y-m-d H:i') ?? '',
+                ];
             } elseif ($row) {
                 $statusColor = $row->status ? ($statuses->all()[$row->status]['color'] ?? 'slate') : null;
                 $values = [

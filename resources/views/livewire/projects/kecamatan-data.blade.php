@@ -351,7 +351,7 @@
                                         @if ($row->duplicate_of_id && ($owner = $owners->get($row->row_key)))
                                             {{-- Baris kembar: dihitung di unit pemiliknya --}}
                                             <a href="{{ route('projects.kecamatan', [$project, $owner->kecamatan->kode]) }}" wire:navigate
-                                                class="badge bg-slate-100 text-slate-600 ring-1 ring-slate-500/20 hover:bg-slate-200" title="Baris ini sudah dihitung di {{ $owner->kecamatan->nama }}">
+                                                class="badge ring-1 {{ $owner->status ? $statuses->badgeClasses($owner->status) : 'bg-slate-100 text-slate-600 ring-slate-500/20' }} hover:opacity-80" title="Baris ini dihitung di {{ $owner->kecamatan->nama }}; statusnya ikut status di sana">
                                                 Di {{ $owner->kecamatan->nama }}
                                                 @if ($owner->status)
                                                     · {{ $statuses->label($owner->status) }}

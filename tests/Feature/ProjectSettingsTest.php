@@ -19,6 +19,7 @@ use Livewire\Livewire;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Color;
 use OpenSpout\Common\Entity\Style\Style;
+use OpenSpout\Reader\XLSX\Reader;
 use OpenSpout\Writer\XLSX\Writer;
 use Tests\TestCase;
 
@@ -381,6 +382,52 @@ class ProjectSettingsTest extends TestCase
             ->assertSee('Progres semua sheet')
             ->assertSeeText('2 / 3 selesai')
             ->assertViewHas('sheetProgress', fn ($progress) => $progress->pluck('sheet.name')->all() === ['R149', 'R154']);
+    }
+
+    public function test_duplicate_row_shows_status_of_its_owner_in_excel_and_web(): void
+    {
+        $project = $this->createProject();
+        $workbook = function (string $name, array $uuids): UploadedFile {
+            $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+            $writer = new Writer;
+            $writer->openToFile($path);
+            $writer->addRow(Row::fromValues(['nama_usaha', 'link']));
+            foreach ($uuids as $uuid) {
+                $writer->addRow(Row::fromValues(['TOKO', 'https://fasih-sm.bps.go.id/app/assignment-detail/'.$uuid]));
+            }
+            $writer->close();
+
+            return UploadedFile::fake()->createWithContent($name, file_get_contents($path));
+        };
+        $this->upload($project, $workbook('Bagian 15 KBLI tidak edit.xlsx', [self::UUID_A]));
+        $this->upload($project, $workbook('Bagian 16 KBLI tidak edit.xlsx', [self::UUID_A, self::UUID_B]));
+        [$owner, $other] = $project->kecamatans()->orderBy('kode')->get()->all();
+
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $owner->kode])
+            ->set('reportUpload', UploadedFile::fake()->createWithContent('laporan.json', json_encode(['queue' => [['id' => self::UUID_A, 'status' => 'red', 'reason' => 'galat kirim']]])))
+            ->call('uploadReport');
+
+        auth()->logout();
+        $download = $this->get(route('projects.kecamatan.export', [$project, $other->kode]))->assertOk();
+        $file = tempnam(sys_get_temp_dir(), 'out').'.xlsx';
+        file_put_contents($file, $download->streamedContent() ?: file_get_contents($download->baseResponse->getFile()->getPathname()));
+        $reader = new Reader;
+        $reader->open($file);
+        $rows = [];
+        foreach ($reader->getSheetIterator() as $sheet) {
+            foreach ($sheet->getRowIterator() as $row) {
+                $rows[] = $row->toArray();
+            }
+        }
+        $reader->close();
+
+        $this->assertSame(['nama_usaha', 'link', 'status_web', 'keterangan_web', 'waktu_status_web'], array_slice($rows[0], 0, 5));
+        $this->assertSame('Gagal', $rows[1][2], 'baris kembar ikut status di unit pemiliknya');
+        $this->assertStringContainsString('Sudah di '.$owner->nama.' · galat kirim', $rows[1][3]);
+        $this->assertSame(1, $other->refresh()->target, 'baris kembar tetap tidak dihitung dua kali');
+
+        Livewire::test(KecamatanData::class, ['project' => $project, 'kode' => $other->kode])
+            ->assertSeeTextInOrder(['Di '.$owner->nama, '· Gagal']);
     }
 
     public function test_deleting_owner_unit_gives_duplicate_rows_their_status_back(): void

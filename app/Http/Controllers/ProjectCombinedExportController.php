@@ -76,8 +76,7 @@ class ProjectCombinedExportController extends Controller
                 TargetRow::where('target_sheet_id', $sheet->id)
                     ->with('duplicateOf:id,nama')
                     ->orderBy('row_number')
-                    ->lazy(1000)
-                    ->each(function (TargetRow $row) use ($writer, $unit, $headers, $positions, $tracked, $statuses, $processColumn, $initialStatusColumn, &$written) {
+                    ->chunk(1000, fn ($rows) => TargetRow::withOwners($rows)->each(function (TargetRow $row) use ($writer, $unit, $headers, $positions, $tracked, $statuses, $processColumn, $initialStatusColumn, &$written) {
                         $cells = $this->cellsAt($row, $positions, count($headers));
 
                         if ($tracked && $processColumn !== false && $statuses->isDone($row->status)) {
@@ -98,21 +97,20 @@ class ProjectCombinedExportController extends Controller
                         }
 
                         $statusColumn = count($values);
+                        // Baris kembar: dihitung di unit lain, statusnya ikut status di unit itu
+                        $source = $row->duplicate_of_id !== null ? $row->owner : $row;
+                        $where = $row->duplicate_of_id !== null ? 'Sudah di '.($row->duplicateOf?->nama ?? 'unit lain') : null;
                         $values = [
                             ...$values,
-                            match (true) {
-                                $row->duplicate_of_id !== null => 'Sudah di '.($row->duplicateOf?->nama ?? 'unit lain'),
-                                $row->status !== null => $statuses->label($row->status),
-                                default => '',
-                            },
-                            $row->reason ?? '',
-                            $row->status_at?->format('Y-m-d H:i') ?? '',
+                            $source?->status ? $statuses->label($source->status) : ($where ?? ''),
+                            $where !== null ? $where.($source?->reason ? ' · '.$source->reason : '') : ($row->reason ?? ''),
+                            $source?->status_at?->format('Y-m-d H:i') ?? '',
                         ];
-                        $style = $row->status ? XlsxStyleBook::openSpoutStyle($statuses->all()[$row->status]['color'] ?? null) : null;
+                        $style = $source?->status ? XlsxStyleBook::openSpoutStyle($statuses->all()[$source->status]['color'] ?? null) : null;
 
                         $writer->addRow($style ? Row::fromValuesWithStyles($values, [$statusColumn => $style]) : Row::fromValues($values));
                         $written++;
-                    });
+                    }));
             }
 
             // Tombol filter Excel di baris judul (termasuk kolom unit & status)

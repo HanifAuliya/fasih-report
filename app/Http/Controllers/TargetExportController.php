@@ -52,9 +52,10 @@ class TargetExportController extends Controller
             $writer->addRow(Row::fromValues($tracked ? [...$headers, 'status_web', 'keterangan_web', 'waktu_status_web'] : $headers));
 
             $sheet->rows()->with('duplicateOf:id,nama')->chunk(500, function ($rows) use ($writer, $statuses, $tracked, $processColumn, $initialStatusColumn) {
-                foreach ($rows as $row) {
+                foreach (TargetRow::withOwners($rows) as $row) {
                     $values = $this->rowValues($row, $statuses, $tracked, $processColumn, $initialStatusColumn);
-                    $style = $tracked && $row->status ? XlsxStyleBook::openSpoutStyle($statuses->all()[$row->status]['color'] ?? null) : null;
+                    $shown = $row->duplicate_of_id !== null ? $row->owner?->status : $row->status;
+                    $style = $tracked && $shown ? XlsxStyleBook::openSpoutStyle($statuses->all()[$shown]['color'] ?? null) : null;
 
                     // Sel status_web berwarna sesuai status
                     $writer->addRow($style
@@ -93,13 +94,22 @@ class TargetExportController extends Controller
             $cells[$initialStatusColumn] = 'dipindah';
         }
 
+        // Baris kembar: dihitung di unit lain, statusnya ikut status di unit itu
+        if ($row->duplicate_of_id !== null) {
+            $where = 'Sudah di '.($row->duplicateOf?->nama ?? 'unit lain');
+            $owner = $row->owner;
+
+            return [
+                ...$cells,
+                $owner?->status ? $statuses->label($owner->status) : $where,
+                $where.($owner?->reason ? ' · '.$owner->reason : ''),
+                $owner?->status_at?->format('Y-m-d H:i') ?? '',
+            ];
+        }
+
         return [
             ...$cells,
-            match (true) {
-                $row->duplicate_of_id !== null => 'Sudah di '.($row->duplicateOf?->nama ?? 'unit lain'),
-                $row->status !== null => $statuses->label($row->status),
-                default => '',
-            },
+            $row->status !== null ? $statuses->label($row->status) : '',
             $row->reason ?? '',
             $row->status_at?->format('Y-m-d H:i') ?? '',
         ];
