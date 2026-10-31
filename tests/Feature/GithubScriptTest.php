@@ -190,8 +190,29 @@ class GithubScriptTest extends TestCase
         $script = $this->createGithubScript();
         $script->update(['synced_at' => now()->subHour()]);
 
+        // Diambil setelah respons terkirim: pengecekan berikutnya mendapat kode baru
         $this->fakeGithub($this->userscript('2.7'), 'sha-4');
+        $this->get($script->rawUrl())->assertOk()->assertSee('@version      2.4', false);
         $this->get($script->rawUrl())->assertOk()->assertSee('@version      2.7', false);
+    }
+
+    public function test_failing_github_sync_is_not_retried_on_every_raw_request(): void
+    {
+        Http::fake(['api.github.com/*' => Http::response(['message' => 'Not Found'], 404)]);
+        $script = $this->project()->scripts()->create([
+            'name' => 'Ganti Wilayah', 'filename' => 'ganti.user.js', 'language' => 'javascript', 'code' => $this->userscript('2.4'),
+            'is_public' => true, 'github_repo' => 'hanif/fasih-scripts', 'github_branch' => 'main', 'github_path' => 'ganti.user.js',
+        ]);
+
+        $this->get($script->rawUrl())->assertOk()->assertSee('@version      2.4', false);
+        $afterFirstCheck = Http::recorded()->count();
+
+        $this->get($script->rawUrl())->assertOk();
+        $this->get($script->rawUrl())->assertOk();
+
+        $this->assertGreaterThan(0, $afterFirstCheck);
+        $this->assertSame($afterFirstCheck, Http::recorded()->count());
+        $this->assertStringContainsString('tidak ditemukan', $script->fresh()->sync_error);
     }
 
     public function test_guest_cannot_trigger_sync(): void

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Script;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
@@ -109,6 +110,12 @@ class GithubScriptSync
         $minutes = (int) config('fasih.github_sync_minutes', 10);
 
         if (! $script->isFromGithub() || ($script->synced_at && $script->synced_at->gt(now()->subMinutes($minutes)))) {
+            return;
+        }
+
+        // Satu percobaan per jeda, juga bila gagal (mis. repo privat tanpa token): tanpa ini setiap cek
+        // update Tampermonkey menunggu GitHub sampai puluhan detik sambil menahan slot PHP & koneksi database
+        if (! Cache::add('github-sync-attempt:'.$script->id, true, now()->addMinutes($minutes))) {
             return;
         }
 
