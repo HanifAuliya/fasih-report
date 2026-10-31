@@ -3,6 +3,7 @@
 use App\Http\Controllers\DeployController;
 use App\Http\Controllers\DeployPackageController;
 use App\Http\Controllers\DeployStatusController;
+use App\Http\Controllers\ErrorLogController;
 use App\Http\Controllers\GithubWebhookController;
 use App\Http\Controllers\MasterExportController;
 use App\Http\Controllers\PendingExportController;
@@ -83,4 +84,7 @@ Route::middleware('auth')->group(function () {
 
         return redirect()->route('dashboard');
     })->name('logout');
+
+    // Ringkasan error server untuk admin (hosting tanpa SSH)
+    Route::get('/_log', ErrorLogController::class)->middleware('can:manage')->name('errors.log');
 });

@@ -52,6 +52,25 @@ class AppTest extends TestCase
         $this->assertSame('2026-10-04 16:00:00', $project->fresh()->created_at->format('Y-m-d H:i:s'));
     }
 
+    public function test_error_log_summary_is_admin_only_and_masks_long_numbers(): void
+    {
+        $this->get('/_log')->assertRedirect('/login');
+
+        $path = storage_path('logs/laravel.log');
+        $original = is_file($path) ? file_get_contents($path) : null;
+        file_put_contents($path, "[2026-10-31 10:00:00] production.ERROR: Gagal untuk 6307012345678901 at /x.php:1\n[stacktrace]\n#0 detail\n");
+
+        try {
+            $this->actingAs($this->admin())->get('/_log')
+                ->assertOk()
+                ->assertSee('Gagal untuk [angka]')
+                ->assertDontSee('6307012345678901')
+                ->assertDontSee('#0 detail');
+        } finally {
+            $original === null ? unlink($path) : file_put_contents($path, $original);
+        }
+    }
+
     public function test_guest_can_view_pages_without_admin_controls(): void
     {
         $url = '/data/fasih-auto-ganti-wilayah-oss';
